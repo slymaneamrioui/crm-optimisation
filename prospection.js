@@ -24,7 +24,7 @@ const SECTEURS=[
 const SEC=k=>SECTEURS.find(x=>x.k===k);
 const TRANCHES=[["01","1-2"],["02","3-5"],["03","6-9"],["11","10-19"],["12","20-49"]];
 const TR_LABEL={"00":"0 salarié","01":"1 à 2 salariés","02":"3 à 5 salariés","03":"6 à 9 salariés","11":"10 à 19 salariés","12":"20 à 49 salariés","21":"50 à 99 salariés","NN":"Non renseigné"};
-const PST=[{k:"Nouveau",c:"#706e6b"},{k:"Pas de réponse",c:"#dd7a01"},{k:"À rappeler",c:"#0176d3"},{k:"Pas intéressé",c:"#ba0517"},{k:"Converti en client",c:"#2e844a"}];
+const PST=[{k:"Nouveau",c:"#706e6b"},{k:"Pas de réponse",c:"#dd7a01"},{k:"À rappeler",c:"#0176d3"},{k:"Pas intéressé",c:"#ba0517"},{k:"Fermé",c:"#3e3e3c"},{k:"Converti en client",c:"#2e844a"}];
 const PSC=Object.fromEntries(PST.map(x=>[x.k,x.c]));
 const A_APPELER=["Nouveau","Pas de réponse","À rappeler"];
 
@@ -147,7 +147,7 @@ function rRecherche(){
     <div class="f full" style="flex-direction:row;gap:8px"><button class="btn primary" ${S.loading?"disabled":""}>${S.loading&&!S.results.length?"Recherche…":"🔍 Rechercher"}</button></div>
    </form></div></div>
   ${S.err?`<div class="banner">${esc(S.err)}</div>`:""}
-  ${S.results.length?`<div class="card"><div class="card-h">${S.total.toLocaleString("fr-FR")} entreprise${S.total>1?"s":""} trouvée${S.total>1?"s":""}${S.villeLabel?" · "+esc(S.villeLabel):""}
+  ${S.results.length?`<div class="card"><div class="card-h">${S.total.toLocaleString("fr-FR")} entreprise${S.total>1?"s":""} trouvée${S.total>1?"s":""}${S.villeLabel?" · "+esc(S.villeLabel):""}${S.fermes?`<span class="small muted" style="font-weight:400">· ${S.fermes} fermée${S.fermes>1?"s":""} masquée${S.fermes>1?"s":""}</span>`:""}
      ${fresh.length?`<button class="btn sm primary ml-auto" data-xaddall>+ Ajouter les ${fresh.length} affichées</button>`:""}</div>
     ${S.results.map(r=>`<div class="list-row" style="cursor:default;flex-wrap:nowrap"><div class="avatar" style="background:${avatarColor(r.societe)}">${esc(initials(r.societe))}</div>
       <div class="grow"><div class="ellip" style="font-weight:600">${esc(r.societe)}</div>
@@ -171,7 +171,9 @@ function bindGoogleForm(){
 function mapEnt(e){
   const s=e.siege||{};const dirs=e.dirigeants||[];
   // l'établissement trouvé dans la zone recherchée (sinon le siège)
-  const et=(e.matching_etablissements||[]).find(x=>x&&x.adresse)||s;
+  const ms=(e.matching_etablissements||[]).filter(x=>x&&x.adresse);
+  const et=ms.find(x=>x.etat_administratif!=="F")||ms[0]||s;
+  const ferme=e.etat_administratif==="F"||et.etat_administratif==="F"||(!ms.length&&s.etat_administratif==="F");
   const ens=(et.liste_enseignes&&et.liste_enseignes[0])||(s.liste_enseignes&&s.liste_enseignes[0])||et.nom_commercial||s.nom_commercial||"";
   const raison=String(e.nom_raison_sociale||e.nom_complet||"").replace(/\s*\(.*\)\s*$/,"");
   const ei=!!((e.complements&&e.complements.est_entrepreneur_individuel)||e.nature_juridique==="1000");
@@ -184,11 +186,11 @@ function mapEnt(e){
     adresse:et.adresse||s.adresse||"",cp:et.code_postal||s.code_postal||"",ville:tcase(et.libelle_commune||s.libelle_commune||""),
     naf:e.activite_principale||s.activite_principale||"",effectif:TR_LABEL[e.tranche_effectif_salarie]||TR_LABEL[s.tranche_effectif_salarie]||"",dateCreation:e.date_creation||"",
     dirigeants:[...pers.map(d=>[d.prenom,d.nom].filter(Boolean).join(" ")+(d.fonction?" ("+d.fonction+")":"")),...morales].slice(0,4).join(", "),
-    prenom:g?g.prenom:"",nom:g?g.nom:"",fonction:g?g.fonction:""};
+    prenom:g?g.prenom:"",nom:g?g.nom:"",fonction:g?g.fonction:"",ferme,verifieLe:todayStr()};
 }
 async function search(more){
   const S=P.search;
-  if(!more){S.page=0;S.pages=0;S.total=0;S.results=[];S.cps=null;S.villeLabel=""}
+  if(!more){S.page=0;S.pages=0;S.total=0;S.results=[];S.cps=null;S.villeLabel="";S.fermes=0}
   S.loading=true;S.err="";rRecherche();
   try{
     if(!more){
@@ -216,16 +218,47 @@ async function search(more){
     if(!r.ok)throw new Error("La recherche a échoué (erreur "+r.status+"). Réessaie dans un instant.");
     const j=await r.json();
     S.page=j.page||S.page+1;S.pages=j.total_pages||0;S.total=j.total_results||0;
-    S.results=S.results.concat((j.results||[]).map(mapEnt));
+    const all=(j.results||[]).map(mapEnt);
+    S.fermes=(S.fermes||0)+all.filter(r=>r.ferme).length;
+    S.results=S.results.concat(all.filter(r=>!r.ferme));
     if(!S.results.length)S.err="Aucune entreprise trouvée. Élargis la zone ou la taille.";
   }catch(e){S.err=(e&&e.message&&!/fetch|network/i.test(e.message))?e.message:"Recherche impossible : vérifie ta connexion internet."}
   S.loading=false;if(state.view==="p-recherche")rRecherche();
 }
 async function addProspect(r){
   if(!pdb)return;const ref=pdb.collection("prospects").doc();
-  const p={...r,id:ref.id,secteur:P.search.secteur||"",statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso()};
+  const p={...r,ferme:undefined,id:ref.id,secteur:P.search.secteur||"",statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso()};
   prospects.set(ref.id,p);await saveP(p);
   return ref.id;
+}
+
+/* ---------- toujours active ? (annuaire officiel) ---------- */
+function marquerFerme(p,source){
+  if(p.statut==="Fermé")return;
+  p.statutAvantFermeture=p.statut;p.statut="Fermé";p.prochainAppel="";
+  p.historique=[...(p.historique||[]),{date:today(),ts:Date.now(),type:"verif",resultat:"Fermé définitivement ("+source+")",statutApres:"Fermé"}];
+}
+async function checkActive(p){
+  if(!p.siren)return null;
+  try{
+    const r=await fetch("https://recherche-entreprises.api.gouv.fr/search?q="+encodeURIComponent(p.siren)+"&per_page=1");
+    if(!r.ok)return null;
+    const j=await r.json();const e=(j.results||[]).find(x=>String(x.siren)===String(p.siren));
+    if(!e)return null;
+    const ets=[...(e.matching_etablissements||[]),e.siege||{}];
+    const et=p.siret?ets.find(x=>x.siret===p.siret):null;
+    const actif=e.etat_administratif!=="F"&&!(et&&et.etat_administratif==="F");
+    p.verifieLe=today();
+    if(!actif)marquerFerme(p,"annuaire officiel");
+    await saveP(p);return actif;
+  }catch(e){return null}
+}
+const aVerifier=p=>p.siren&&p.statut!=="Fermé"&&p.statut!=="Converti en client"&&(!p.verifieLe||daysFrom(p.verifieLe)<=-30);
+let checking=null;
+async function checkMany(list){
+  if(checking)return;checking={done:0,total:list.length,fermes:0};render();
+  for(const p of list){if((await checkActive(p))===false)checking.fermes++;checking.done++;if(state.view.startsWith("p-"))render();await new Promise(r=>setTimeout(r,200))}
+  const c=checking;checking=null;toast(c.fermes?"🚫 "+c.fermes+" entreprise"+(c.fermes>1?"s":"")+" fermée"+(c.fermes>1?"s":"")+" retirée"+(c.fermes>1?"s":"")+" de tes appels":"✓ Toutes tes entreprises sont actives");render();
 }
 
 /* ---------- Google Maps : compléter téléphone, site web, adresse ---------- */
@@ -261,8 +294,10 @@ async function enrich(p,silent){
     if(pl.formattedAddress)p.adresseGoogle=pl.formattedAddress;
     if(pl.displayName)p.nomGoogle=pl.displayName;
     if(pl.rating)p.noteGoogle=pl.rating+" ★ ("+(pl.userRatingCount||0)+" avis)";
-    if(pl.businessStatus==="CLOSED_PERMANENTLY"){p.fermeGoogle=true}
+    p.fermeGoogle=pl.businessStatus==="CLOSED_PERMANENTLY";p.fermeTempGoogle=pl.businessStatus==="CLOSED_TEMPORARILY";
+    if(p.fermeGoogle)marquerFerme(p,"Google Maps");
     await saveP(p);
+    if(p.fermeGoogle){if(!silent)toast("🚫 Fermé définitivement selon Google Maps : retiré de tes appels");return false}
     if(!silent)toast(pl.nationalPhoneNumber?"📞 Numéro trouvé : "+pl.nationalPhoneNumber:"Trouvé sur Google Maps, mais sans numéro affiché");
     return !!pl.nationalPhoneNumber;
   }catch(e){
@@ -302,11 +337,13 @@ function rListe(){
   function match(p,g){const st=p.statut||"Nouveau";if(g==="Tous")return true;if(g==="À appeler")return A_APPELER.includes(st)&&(!p.prochainAppel||p.prochainAppel<=t);return st===g}
   const L=all.filter(p=>match(p,P.filter)&&(!P.secFilter||p.secteur===P.secFilter)).sort((a,b)=>(a.prochainAppel||"").localeCompare(b.prochainAppel||"")||(b.createdAt||"").localeCompare(a.createdAt||""));
   const secs=[...new Set(all.map(p=>p.secteur).filter(Boolean))];
-  const sn=sansNumero();
+  const sn=sansNumero();const av=plist().filter(aVerifier);
   $("#main").innerHTML=head("Mes prospects",`${all.length} au total · séparés de tes clients`)+
   (bulk?`<div class="banner" style="background:#f1ecfd;border-color:#d9cdfb;color:#3b2a8a">📞 Recherche des numéros sur Google Maps : ${bulk.done}/${bulk.total} · ${bulk.found} trouvé${bulk.found>1?"s":""}</div>`
    :sn.length?(hasKey()?`<div class="banner" style="background:#f1ecfd;border-color:#d9cdfb;color:#3b2a8a;display:flex;gap:10px;align-items:center;flex-wrap:wrap">${sn.length} prospect${sn.length>1?"s":""} sans numéro <button class="btn sm primary" data-xenrichall>📞 Chercher leurs numéros sur Google Maps</button></div>`
-     :`<div class="banner" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${sn.length} prospect${sn.length>1?"s":""} sans numéro. Configure Google Maps pour les trouver automatiquement. <button class="btn sm" data-v="p-recherche">Configurer</button></div>`):"")+`
+     :`<div class="banner" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${sn.length} prospect${sn.length>1?"s":""} sans numéro. Configure Google Maps pour les trouver automatiquement. <button class="btn sm" data-v="p-recherche">Configurer</button></div>`):"")+
+  (checking?`<div class="banner" style="background:#f6f8fa;border-color:#d0d7de;color:#333">🔎 Vérification de l'activité : ${checking.done}/${checking.total} · ${checking.fermes} fermée${checking.fermes>1?"s":""}</div>`
+   :av.length?`<div class="banner" style="background:#f6f8fa;border-color:#d0d7de;color:#333;display:flex;gap:10px;align-items:center;flex-wrap:wrap">${av.length} prospect${av.length>1?"s":""} à revérifier (activité non contrôlée depuis 30 jours) <button class="btn sm" data-xcheckall>🔎 Vérifier qu'ils sont toujours actifs</button></div>`:"")+`
   <div class="toolbar">${groups.map(g=>`<button class="chip ${P.filter===g?"on":""}" data-xfilter="${esc(g)}">${esc(g)} <b>${cnt(g)}</b></button>`).join("")}
    ${secs.length>1?`<select id="xSecF" style="margin-left:auto;padding:7px 10px;border:1px solid #d4d4d4;border-radius:8px"><option value="">Tous les secteurs</option>${secs.map(s=>`<option ${P.secFilter===s?"selected":""}>${esc(s)}</option>`).join("")}</select>`:""}</div>
   <div class="card">${L.length?L.map(p=>`<div class="list-row" data-xopen="${esc(p.id)}" style="flex-wrap:nowrap"><div class="avatar" style="background:${avatarColor(p.societe)}">${esc(initials(p.societe))}</div>
@@ -348,8 +385,10 @@ function openProspect(id){
 }
 
 /* 3. Session d'appels */
+let verifEnCours=null;
 function rAppels(){
   const q=queue();const st=statsJour();const p=q[0];
+  if(p&&aVerifier(p)&&verifEnCours!==p.id){verifEnCours=p.id;checkActive(p).then(a=>{verifEnCours=null;if(a===false)toast("🚫 "+p.societe+" est fermée : retirée de tes appels");if(state.view==="p-appels")rAppels()})}
   const secs=[...new Set(plist().filter(x=>A_APPELER.includes(x.statut||"Nouveau")).map(x=>x.secteur).filter(Boolean))];
   let body="";
   if(!p){
@@ -359,6 +398,7 @@ function rAppels(){
     body=`<div class="p-call card">
      <div class="p-call-h"><div class="avatar" style="width:46px;height:46px;font-size:17px;background:${avatarColor(p.societe)}">${esc(initials(p.societe))}</div>
       <div class="grow"><div style="font-size:19px;font-weight:700">${esc(p.societe)}</div><div class="small muted">${esc([p.secteur,p.effectif,p.ville].filter(Boolean).join(" · "))}</div>
+      <div class="small" style="margin:3px 0">${verifEnCours===p.id?`<span class="tag" style="background:#f1f1f1;color:#555">Vérification de l'activité…</span>`:p.verifieLe?`<span class="tag" style="background:#e8f6ec;color:#1f6b35">✓ Active (vérifiée le ${fdateShort(p.verifieLe)})</span>`:""}${p.fermeTempGoogle?` <span class="tag today">Fermé temporairement selon Google</span>`:""}</div>
       <div class="small" style="margin-top:3px">${[p.prenom,p.nom].filter(Boolean).length?"👤 "+esc([p.prenom,p.nom].filter(Boolean).join(" "))+(p.fonction?" ("+esc(p.fonction)+")":""):"Contact inconnu"} ${ppill(p.statut)} ${p.nbAppels?`<span class="small muted">· ${p.nbAppels} appel${p.nbAppels>1?"s":""} déjà</span>`:""}</div></div></div>
      <div class="p-tel">${p.tel?`<a class="btn primary p-big" href="${esc(telHref(p.tel))}">📞 Appeler le ${esc(p.tel)}</a>`:`<div class="p-notel"><div class="small muted" style="margin-bottom:6px">Pas encore de numéro :</div><div style="display:flex;gap:8px;flex-wrap:wrap">${hasKey()?`<button class="btn sm primary" data-xenrich="${esc(p.id)}">📞 Chercher sur Google Maps</button>`:""}${gLink(p)}<input id="xTel" type="tel" placeholder="Colle le numéro ici" style="flex:1;min-width:150px;padding:9px 11px;border:1px solid #d4d4d4;border-radius:8px"><button class="btn" data-xsavetel="${esc(p.id)}">Enregistrer</button></div></div>`}</div>
      <div class="small muted" style="padding:0 16px 10px">📍 ${esc(p.adresseGoogle||tcase(p.adresse)||"Adresse inconnue")}${p.siteWeb?` · <a href="${esc(p.siteWeb)}" target="_blank" rel="noopener">site web</a>`:""}${p.noteGoogle?" · "+esc(p.noteGoogle):""}${p.fermeGoogle?` · <span style="color:var(--bad)">fermé selon Google</span>`:""}</div>
@@ -501,11 +541,12 @@ function send(how){
 /* ---------- clics ---------- */
 document.addEventListener("click",e=>{
   if(e.target.closest('a[href^="tel:"],a[href^="sms:"],a[href^="mailto:"],a[target=_blank]'))return;
-  const t=e.target.closest("[data-xopen],[data-xadd],[data-xaddall],[data-xmore],[data-xfilter],[data-xsess],[data-xres],[data-xpanel],[data-xrappel],[data-xrdv],[data-xsavetel],[data-xunskip],[data-xconvert],[data-xclient],[data-xdel],[data-xmsg],[data-xtpl],[data-xsend],[data-xaddobj],[data-xdelobj],[data-xresetscripts],[data-xaddmsg],[data-xdelmsg],[data-xresetmsgs],.p-subnav [data-v],.empty [data-v],.banner [data-v],[data-xgkey],[data-xenrichall],[data-xenrich],[data-xsavemail]");
+  const t=e.target.closest("[data-xopen],[data-xadd],[data-xaddall],[data-xmore],[data-xfilter],[data-xsess],[data-xres],[data-xpanel],[data-xrappel],[data-xrdv],[data-xsavetel],[data-xunskip],[data-xconvert],[data-xclient],[data-xdel],[data-xmsg],[data-xtpl],[data-xsend],[data-xaddobj],[data-xdelobj],[data-xresetscripts],[data-xaddmsg],[data-xdelmsg],[data-xresetmsgs],.p-subnav [data-v],.empty [data-v],.banner [data-v],[data-xgkey],[data-xenrichall],[data-xenrich],[data-xsavemail],[data-xcheckall]");
   if(!t)return;
   const ds=t.dataset;
   if(t.matches(".p-subnav [data-v],.empty [data-v],.banner [data-v]")){go(ds.v);return}
   if(ds.xsavemail){const p=prospects.get(ds.xsavemail);const v=(($("#xMail")||{}).value||"").trim();if(p&&/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){p.email=v;saveP(p);toast("✓ Courriel enregistré");rAppels()}else toast("Courriel invalide");return}
+  if(t.hasAttribute("data-xcheckall")){checkMany(plist().filter(aVerifier));return}
   if(t.hasAttribute("data-xgkey")){P.showKey=!P.showKey;render();return}
   if(t.hasAttribute("data-xenrichall")){enrichMany(sansNumero().map(p=>p.id));return}
   if(ds.xenrich){const p=prospects.get(ds.xenrich);if(p){t.disabled=true;t.textContent="Recherche…";enrich(p).then(()=>{if($("#scrim").classList.contains("open"))openProspect(p.id);render()})}return}
