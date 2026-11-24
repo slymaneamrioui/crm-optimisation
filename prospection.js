@@ -289,8 +289,8 @@ async function enrich(p,silent){
     if(!pl){p.googleTrouve=false;await saveP(p);if(!silent)toast("Pas trouvé sur Google Maps : essaie « Trouver le numéro »");return false}
     p.googleTrouve=true;
     if(pl.nationalPhoneNumber&&!p.tel)p.tel=pl.nationalPhoneNumber;
-    if(pl.websiteURI)p.siteWeb=pl.websiteURI;
-    if(pl.googleMapsURI)p.googleMaps=pl.googleMapsURI;
+    if(safeUrl(pl.websiteURI))p.siteWeb=safeUrl(pl.websiteURI);
+    if(safeUrl(pl.googleMapsURI))p.googleMaps=safeUrl(pl.googleMapsURI);
     if(pl.formattedAddress)p.adresseGoogle=pl.formattedAddress;
     if(pl.displayName)p.nomGoogle=pl.displayName;
     if(pl.rating)p.noteGoogle=pl.rating+" ★ ("+(pl.userRatingCount||0)+" avis)";
@@ -314,6 +314,7 @@ async function enrichMany(ids){
     bulk.done++;if(state.view.startsWith("p-"))render();await new Promise(r=>setTimeout(r,250));}
   const b=bulk;bulk=null;toast("📞 "+b.found+" numéro"+(b.found>1?"s":"")+" trouvé"+(b.found>1?"s":"")+" sur "+b.total);render();
 }
+function safeUrl(u){try{const x=new URL(String(u||""));return /^https?:$/.test(x.protocol)?x.href:""}catch(e){return""}}
 function siteContact(p){if(!p.siteWeb)return"";try{const u=new URL(p.siteWeb);return u.origin+"/contact"}catch(e){return""}}
 function mailInfo(p){
   if(p.email)return `<b>Courriel</b><a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`;
@@ -364,7 +365,7 @@ function openProspect(id){
     <div><b>Entreprise</b>${esc([p.raisonSociale&&p.raisonSociale!==p.societe?p.raisonSociale:"",p.secteur,p.effectif].filter(Boolean).join(" · ")||"—")}</div>
     <div><b>SIRET</b>${esc(p.siret||"—")}</div>
     <div>${mailInfo(p)}</div>
-    ${p.siteWeb||p.googleMaps||p.noteGoogle?`<div><b>En ligne</b>${p.siteWeb?`<a href="${esc(p.siteWeb)}" target="_blank" rel="noopener">Site web</a> · `:""}${p.googleMaps?`<a href="${esc(p.googleMaps)}" target="_blank" rel="noopener">Google Maps</a>`:""}${p.noteGoogle?" · "+esc(p.noteGoogle):""}</div>`:""}
+    ${p.siteWeb||p.googleMaps||p.noteGoogle?`<div><b>En ligne</b>${p.siteWeb?`<a href="${esc(safeUrl(p.siteWeb))}" target="_blank" rel="noopener">Site web</a> · `:""}${p.googleMaps?`<a href="${esc(safeUrl(p.googleMaps))}" target="_blank" rel="noopener">Google Maps</a>`:""}${p.noteGoogle?" · "+esc(p.noteGoogle):""}</div>`:""}
     ${p.fermeGoogle?`<div style="color:var(--bad)"><b>Attention</b>Indiqué comme définitivement fermé sur Google</div>`:""}
    </div>
    <div class="form">
@@ -401,7 +402,7 @@ function rAppels(){
       <div class="small" style="margin:3px 0">${verifEnCours===p.id?`<span class="tag" style="background:#f1f1f1;color:#555">Vérification de l'activité…</span>`:p.verifieLe?`<span class="tag" style="background:#e8f6ec;color:#1f6b35">✓ Active (vérifiée le ${fdateShort(p.verifieLe)})</span>`:""}${p.fermeTempGoogle?` <span class="tag today">Fermé temporairement selon Google</span>`:""}</div>
       <div class="small" style="margin-top:3px">${[p.prenom,p.nom].filter(Boolean).length?"👤 "+esc([p.prenom,p.nom].filter(Boolean).join(" "))+(p.fonction?" ("+esc(p.fonction)+")":""):"Contact inconnu"} ${ppill(p.statut)} ${p.nbAppels?`<span class="small muted">· ${p.nbAppels} appel${p.nbAppels>1?"s":""} déjà</span>`:""}</div></div></div>
      <div class="p-tel">${p.tel?`<a class="btn primary p-big" href="${esc(telHref(p.tel))}">📞 Appeler le ${esc(p.tel)}</a>`:`<div class="p-notel"><div class="small muted" style="margin-bottom:6px">Pas encore de numéro :</div><div style="display:flex;gap:8px;flex-wrap:wrap">${hasKey()?`<button class="btn sm primary" data-xenrich="${esc(p.id)}">📞 Chercher sur Google Maps</button>`:""}${gLink(p)}<input id="xTel" type="tel" placeholder="Colle le numéro ici" style="flex:1;min-width:150px;padding:9px 11px;border:1px solid #d4d4d4;border-radius:8px"><button class="btn" data-xsavetel="${esc(p.id)}">Enregistrer</button></div></div>`}</div>
-     <div class="small muted" style="padding:0 16px 10px">📍 ${esc(p.adresseGoogle||tcase(p.adresse)||"Adresse inconnue")}${p.siteWeb?` · <a href="${esc(p.siteWeb)}" target="_blank" rel="noopener">site web</a>`:""}${p.noteGoogle?" · "+esc(p.noteGoogle):""}${p.fermeGoogle?` · <span style="color:var(--bad)">fermé selon Google</span>`:""}</div>
+     <div class="small muted" style="padding:0 16px 10px">📍 ${esc(p.adresseGoogle||tcase(p.adresse)||"Adresse inconnue")}${p.siteWeb?` · <a href="${esc(safeUrl(p.siteWeb))}" target="_blank" rel="noopener">site web</a>`:""}${p.noteGoogle?" · "+esc(p.noteGoogle):""}${p.fermeGoogle?` · <span style="color:var(--bad)">fermé selon Google</span>`:""}</div>
      <div class="small" style="padding:0 16px 10px">${p.email?`✉️ <a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`:`<div class="p-mail">✉️ <b>Aucun courriel trouvé</b> : demande-le pendant l'appel.${p.siteWeb?` <a href="${esc(siteContact(p))}" target="_blank" rel="noopener">Page contact du site</a>`:""}<div style="display:flex;gap:8px;margin-top:6px"><input id="xMail" type="email" placeholder="Courriel donné au téléphone" style="flex:1;padding:8px 10px;border:1px solid #d4d4d4;border-radius:8px"><button class="btn sm" data-xsavemail="${esc(p.id)}">Enregistrer</button></div></div>`}</div>
      ${p.notes?`<div class="small" style="padding:0 16px 10px">📝 ${esc(p.notes)}</div>`:""}
      <div class="p-script"><div class="sec-t" style="margin:0 0 6px">Ton script</div>${esc(fill(reg.script,p)).replace(/\n/g,"<br>")}</div>
