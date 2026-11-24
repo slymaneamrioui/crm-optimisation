@@ -189,7 +189,7 @@ table.t{width:100%;border-collapse:collapse}
 .ct-v{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:5px;cursor:pointer}
 .ct-v:hover{background:#f6f8fa}
 .ct-foot{display:flex;justify-content:space-between;gap:6px;padding:8px 2px 2px}
-canvas#confetti{position:fixed;inset:0;pointer-events:none;z-index:70}
+canvas#confetti{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:70;display:none;background:transparent}
 .nav-sec{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding:8px 12px 4px}
 .nav-sec.prosp{color:var(--violet)}
 .nav button.pv.on{background:#f1ecfd;color:#5b3cc4}
@@ -600,7 +600,7 @@ function render(){
   renderHome();
 }
 function renderNav(){
-  document.querySelectorAll("#nav button[data-v],#tabbar button[data-v]").forEach(b=>b.classList.toggle("on",b.dataset.v===state.view||(state.view==="record"&&b.dataset.v==="clients")||(b.dataset.group&&state.view.startsWith(b.dataset.group))));
+  document.querySelectorAll("#nav button[data-v],#tabbar button[data-v]").forEach(b=>b.classList.toggle("on",!!(b.dataset.v===state.view||(state.view==="record"&&b.dataset.v==="clients")||(b.dataset.group&&state.view.startsWith(b.dataset.group)))));
   if(window.renderProspectionNav)renderProspectionNav();
   const n=list().filter(c=>c.statut!=="Perdu"&&c.prochaineRelance&&daysFrom(c.prochaineRelance)<=0).length;
   const el=$("#navCount");el.hidden=!n;el.textContent=n;
@@ -1064,9 +1064,9 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-backup]");
 
 /* confetti */
 function confetti(n=140){
-  const cv=$("#confetti"),ctx=cv.getContext("2d");cv.width=innerWidth;cv.height=innerHeight;
+  const cv=$("#confetti"),ctx=cv.getContext("2d");cv.style.display="block";cv.width=innerWidth;cv.height=innerHeight;
   const ps=Array.from({length:n},()=>({x:innerWidth/2+(Math.random()-.5)*200,y:innerHeight*.35,vx:(Math.random()-.5)*14,vy:-Math.random()*12-4,s:Math.random()*7+4,r:Math.random()*6,c:COLORS[Math.floor(Math.random()*COLORS.length)],vr:(Math.random()-.5)*.3}));
-  let f=0;(function step(){ctx.clearRect(0,0,cv.width,cv.height);ps.forEach(p=>{p.vy+=.35;p.x+=p.vx;p.y+=p.vy;p.r+=p.vr;ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.r);ctx.fillStyle=p.c;ctx.fillRect(-p.s/2,-p.s/4,p.s,p.s/2);ctx.restore()});if(++f<130)requestAnimationFrame(step);else ctx.clearRect(0,0,cv.width,cv.height)})();
+  let f=0;(function step(){ctx.clearRect(0,0,cv.width,cv.height);ps.forEach(p=>{p.vy+=.35;p.x+=p.vx;p.y+=p.vy;p.r+=p.vr;ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.r);ctx.fillStyle=p.c;ctx.fillRect(-p.s/2,-p.s/4,p.s,p.s/2);ctx.restore()});if(++f<130)requestAnimationFrame(step);else{ctx.clearRect(0,0,cv.width,cv.height);cv.style.display="none"}})();
 }
 
 $("#main").addEventListener("scroll",closeCtMenu);
