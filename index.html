@@ -190,6 +190,10 @@ table.t{width:100%;border-collapse:collapse}
 .ct-v:hover{background:#f6f8fa}
 .ct-foot{display:flex;justify-content:space-between;gap:6px;padding:8px 2px 2px}
 canvas#confetti{position:fixed;inset:0;pointer-events:none;z-index:70}
+.nav-sec{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding:8px 12px 4px}
+.nav-sec.prosp{color:var(--violet)}
+.nav button.pv.on{background:#f1ecfd;color:#5b3cc4}
+.nav .count.pc,.tabbar .badge.pc{background:var(--violet)}
 #login{position:fixed;inset:0;z-index:80;background:var(--bg);display:none;align-items:center;justify-content:center;padding:16px}
 #login .lg-card{background:#fff;border-radius:16px;box-shadow:var(--shadow);border:1px solid #ececec;padding:28px 22px;width:min(380px,100%);text-align:center}
 #login h1{font-size:20px;margin:0}
@@ -275,11 +279,19 @@ canvas#confetti{position:fixed;inset:0;pointer-events:none;z-index:70}
     </div>
   </header>
   <nav class="nav" id="nav">
+    <div class="nav-sec">CRM clients</div>
     <button data-v="accueil">🏠 Accueil</button>
     <button data-v="clients">🏢 Clients</button>
     <button data-v="pipeline">📊 Pipeline</button>
     <button data-v="relances">⏰ Relances <span class="count" id="navCount" hidden></span></button>
     <button data-v="contrats">📅 Fins de contrat</button>
+    <div class="sep"></div>
+    <div class="nav-sec prosp">Prospection</div>
+    <button data-v="p-recherche" class="pv">🔍 Trouver des prospects</button>
+    <button data-v="p-liste" class="pv">📋 Mes prospects <span class="count pc" id="pCount" hidden></span></button>
+    <button data-v="p-appels" class="pv">📞 Session d'appels</button>
+    <button data-v="p-scripts" class="pv">💬 Scripts et objections</button>
+    <button data-v="p-messages" class="pv">✉️ Modèles de messages</button>
     <div class="sep"></div>
     <button data-backup="export">💾 Sauvegarder</button>
     <button data-backup="import">📥 Importer</button>
@@ -293,8 +305,8 @@ canvas#confetti{position:fixed;inset:0;pointer-events:none;z-index:70}
   <button data-v="accueil"><span class="i">🏠</span>Accueil</button>
   <button data-v="clients"><span class="i">🏢</span>Clients</button>
   <button class="fab" data-new aria-label="Nouveau client">+</button>
+  <button data-v="p-appels" data-group="p-"><span class="i">🎯</span>Prospection<span class="badge pc" id="tabPCount" hidden></span></button>
   <button data-v="relances"><span class="i">⏰</span>Relances<span class="badge" id="tabCount" hidden></span></button>
-  <button data-v="pipeline"><span class="i">📊</span>Pipeline</button>
 </nav>
 <div class="recbar" id="recbar"></div>
 <div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
@@ -318,21 +330,26 @@ window.FIREBASE_CONFIG = {
 <script>
 (function(){
   /* --- stockage local (mode sans Firebase, et ancienne version de l'appli) --- */
-  const KEY="crm-optim-clients-v1";
-  let data={};try{data=JSON.parse(localStorage.getItem(KEY)||"{}")||{}}catch(e){data={}}
-  const subs=new Set();
-  const snap=()=>({docs:Object.entries(data).map(([id,d])=>({id,data:()=>d})),metadata:{fromCache:false}});
-  function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){const er=new Error("Stockage plein");er.code="quota_exceeded";throw er}}
-  function emit(){const s=snap();subs.forEach(f=>{try{f(s)}catch(e){}})}
   const rid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-  const coll={
-    onSnapshot(cb){subs.add(cb);setTimeout(()=>cb(snap()),0);return()=>subs.delete(cb)},
-    doc(id){id=id||rid();return{id,
-      async set(b){data[id]=JSON.parse(JSON.stringify(b));persist();emit()},
-      async delete(){delete data[id];persist();emit()}}}
-  };
-  addEventListener("storage",e=>{if(e.key===KEY){try{data=JSON.parse(e.newValue||"{}")||{}}catch(_){data={}}emit()}});
-  const LocalDB={collection:()=>coll,all:()=>data};
+  const colls={};
+  function localColl(name){
+    if(colls[name])return colls[name];
+    const KEY=name==="clients"?"crm-optim-clients-v1":"crm-optim-"+name+"-v1";
+    let data={};try{data=JSON.parse(localStorage.getItem(KEY)||"{}")||{}}catch(e){data={}}
+    const subs=new Set();
+    const snap=()=>({docs:Object.entries(data).map(([id,d])=>({id,data:()=>d})),metadata:{fromCache:false}});
+    function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){const er=new Error("Stockage plein");er.code="quota_exceeded";throw er}}
+    function emit(){const s=snap();subs.forEach(f=>{try{f(s)}catch(e){}})}
+    addEventListener("storage",e=>{if(e.key===KEY){try{data=JSON.parse(e.newValue||"{}")||{}}catch(_){data={}}emit()}});
+    return colls[name]={
+      all:()=>data,
+      onSnapshot(cb){subs.add(cb);setTimeout(()=>cb(snap()),0);return()=>subs.delete(cb)},
+      doc(id){id=id||rid();return{id,
+        async set(b){data[id]=JSON.parse(JSON.stringify(b));persist();emit()},
+        async delete(){delete data[id];persist();emit()}}}
+    };
+  }
+  const LocalDB={collection:n=>localColl(n||"clients"),all:()=>localColl("clients").all()};
   window.LocalDB=LocalDB;
 
   let resolveDb;const dbReady=new Promise(r=>resolveDb=r);
@@ -370,19 +387,19 @@ window.FIREBASE_CONFIG = {
       }
     });
     function makeAdapter(uid){
-      const col=F.collection(fs,"users",uid,"clients");
       const flag="crm-migrated-"+uid;
       function migrate(s){
         let done=null;try{done=localStorage.getItem(flag)}catch(e){}
         if(done)return;
         const L=LocalDB.all(),ids=Object.keys(L);
+        const col=F.collection(fs,"users",uid,"clients");
         if(ids.length&&s.size===0){ids.forEach(id=>F.setDoc(F.doc(col,id),L[id]).catch(()=>{}))}
         try{localStorage.setItem(flag,"1")}catch(e){}
       }
-      return{collection:()=>({
+      return{collection:(name)=>{const nm=name||"clients";const col=F.collection(fs,"users",uid,nm);return{
         onSnapshot(cb,err){
           return F.onSnapshot(col,s=>{
-            if(!s.metadata.fromCache)migrate(s);
+            if(nm==="clients"&&!s.metadata.fromCache)migrate(s);
             cb({docs:s.docs.map(d=>({id:d.id,data:()=>d.data()})),metadata:{fromCache:s.metadata.fromCache}});
           },err);
         },
@@ -393,7 +410,7 @@ window.FIREBASE_CONFIG = {
             set(b){const p=F.setDoc(ref,b);p.catch(e=>console.warn("Synchronisation refusée",e));return Promise.race([p,wait(400)])},
             delete(){const p=F.deleteDoc(ref);return Promise.race([p,wait(400)])}};
         }
-      })};
+      }}};
     }
   })();
 })();
@@ -451,7 +468,7 @@ const INFOS=[
  {k:"prenom",l:"Prénom"},{k:"nom",l:"Nom"},{k:"fonction",l:"Fonction"},{k:"tel",l:"Téléphone",type:"tel"},{k:"email",l:"Email",type:"email",full:true},
  {t:"Entreprise"},
  {k:"societe",l:"Société"},{k:"siren",l:"SIREN"},{k:"siret",l:"SIRET (siège)"},{k:"formeJuridique",l:"Forme juridique"},
- {k:"naf",l:"Code NAF / APE"},{k:"activite",l:"Activité"},{k:"dateCreation",l:"Date de création",type:"date"},{k:"effectif",l:"Effectif"},
+ {k:"naf",l:"Code NAF / APE"},{k:"activite",l:"Activité"},{k:"secteur",l:"Secteur",type:"select",o:["Restaurants","Bars et cafés","Hôtels","Boulangeries-pâtisseries","Boucheries-charcuteries","Garages auto","Coiffure et esthétique","Commerces alimentaires","Pharmacies","Artisans du bâtiment","Cabinets (comptables, avocats…)","Autre"]},{k:"dateCreation",l:"Date de création",type:"date"},{k:"effectif",l:"Effectif"},
  {k:"capital",l:"Capital social"},{k:"dirigeants",l:"Dirigeant(s)"},{k:"adresse",l:"Adresse",full:true},{k:"cp",l:"Code postal"},{k:"ville",l:"Ville"},
  {t:"Suivi commercial"},
  {k:"statut",l:"Statut",type:"select",o:STATUTS.map(s=>s.k)},{k:"source",l:"Source",type:"select",o:SOURCES},
@@ -563,6 +580,8 @@ function softRender(){
   const a=document.activeElement;
   if($("#ctMenu")){renderNav();renderGoal();return}
   if(state.view==="record"&&a&&a.closest&&a.closest("#recBody")&&["INPUT","TEXTAREA","SELECT"].includes(a.tagName)){renderNav();renderGoal();return}
+  if(state.view.startsWith("p-")&&a&&a.closest&&a.closest("#main")&&["INPUT","TEXTAREA","SELECT"].includes(a.tagName)){renderNav();renderGoal();return}
+  if($("#scrim").classList.contains("open")&&state.view.startsWith("p-")){renderNav();renderGoal();return}
   render();
 }
 function render(){
@@ -577,10 +596,12 @@ function render(){
   if(v==="pipeline")return renderPipeline();
   if(v==="relances")return renderRelances();
   if(v==="contrats")return renderContrats();
+  if(v.startsWith("p-")&&window.renderProspection)return renderProspection(v);
   renderHome();
 }
 function renderNav(){
-  document.querySelectorAll("#nav button[data-v],#tabbar button[data-v]").forEach(b=>b.classList.toggle("on",b.dataset.v===state.view||(state.view==="record"&&b.dataset.v==="clients")));
+  document.querySelectorAll("#nav button[data-v],#tabbar button[data-v]").forEach(b=>b.classList.toggle("on",b.dataset.v===state.view||(state.view==="record"&&b.dataset.v==="clients")||(b.dataset.group&&state.view.startsWith(b.dataset.group))));
+  if(window.renderProspectionNav)renderProspectionNav();
   const n=list().filter(c=>c.statut!=="Perdu"&&c.prochaineRelance&&daysFrom(c.prochaineRelance)<=0).length;
   const el=$("#navCount");el.hidden=!n;el.textContent=n;
   const tc=$("#tabCount");tc.hidden=!n;tc.textContent=n;
@@ -617,7 +638,7 @@ function renderHome(){
       <div class="card" style="margin-bottom:16px"><div class="card-h">⏰ Mes relances des 7 prochains jours<button class="btn ghost sm ml-auto" data-go="relances">Tout voir</button></div>
         ${todo.length?todo.map(c=>rowClient(c,`${relTag(c.prochaineRelance)} <span class="muted small ellip" style="max-width:180px">${esc(c.actionRelance||"")}</span>`)).join(""):`<div class="empty"><div class="big">🎯</div>Aucune relance prévue. Ajoute une date de relance sur tes fiches.</div>`}
       </div>
-      <div class="card"><div class="card-h">📊 Pipeline</div><div class="card-b">
+      <div class="card"><div class="card-h">📊 Pipeline<button class="btn ghost sm ml-auto" data-go="pipeline">Ouvrir</button></div><div class="card-b">
         <div class="pipe-bar">${counts.filter(s=>s.n).map(s=>`<div style="width:${s.n/tot*100}%;background:${s.c}" title="${esc(s.k)} : ${s.n}"></div>`).join("")}</div>
         <div class="legend">${counts.map(s=>`<span><span class="pill" style="background:none;padding:0"><span class="dot" style="background:${s.c}"></span></span> ${esc(s.k)} <b>${s.n}</b></span>`).join("")}</div>
       </div></div>
@@ -813,7 +834,7 @@ function renderRecord(){
           <div><b>Économies / an</b><span style="color:var(--ok);font-weight:700">${eur(economies(c))}</span></div>
         </div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-        ${canWrite?`<button class="btn" data-societe>🔎 Chercher sur societe.com</button><button class="btn primary" data-log>+ Noter un échange</button>`:""}
+        ${canWrite?`<button class="btn" data-societe>🔎 Chercher sur societe.com</button><button class="btn" data-xmsg="clients:${esc(c.id)}">✉️ Message</button><button class="btn primary" data-log>+ Noter un échange</button>`:""}
       </div>
     </div>
     <div class="path ${st==="Perdu"?"lost":""}">${STATUTS.filter(s=>s.k!=="Perdu").map((s,i)=>`<button data-st="${esc(s.k)}" class="${st===s.k?"cur":(st!=="Perdu"&&i<idx)?"done":""}" ${canWrite?"":"disabled"}>${(st!=="Perdu"&&i<idx)?"✓ ":""}${esc(s.k)}</button>`).join("")}</div>
@@ -840,8 +861,7 @@ function renderRecord(){
   const has=v=>v?"":"off";
   $("#recbar").innerHTML=`<button data-go="clients"><span class="i">←</span>Retour</button>
     <a class="${has(c.tel)}" href="${esc(telHref(c.tel))}"><span class="i">📞</span>Appeler</a>
-    <a class="${has(c.tel)}" href="${esc(smsHref(c.tel))}"><span class="i">💬</span>SMS</a>
-    <a class="${has(c.email)}" href="mailto:${esc(c.email||"")}"><span class="i">✉️</span>Email</a>
+    <button data-xmsg="clients:${esc(c.id)}"><span class="i">✉️</span>Message</button>
     ${canWrite?`<button class="main-act" data-log><span class="i">✍️</span>Noter</button>`:""}`;
 }
 const CI={Appel:["📞","#0176d3"],Email:["✉️","#06a59a"],SMS:["💬","#7f56d9"],Visite:["🤝","#2e844a"],Visio:["🎥","#dd7a01"],LinkedIn:["in","#0a66c2"]};
@@ -916,7 +936,7 @@ document.addEventListener("focusout",e=>{if(e.target.closest&&e.target.closest("
 
 function go(v){state.view=v;state.recId=null;try{history.replaceState(null,"","#"+v)}catch(e){}render();$("#main").scrollTop=0}
 function openRec(id,tab){state.view="record";state.recId=id;state.tab=tab||"infos";render();$("#main").scrollTop=0;closeSearch()}
-window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(["accueil","clients","pipeline","relances","contrats"].includes(h)&&state.view!==h){state.view=h;render()}});
+window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if((["accueil","clients","pipeline","relances","contrats"].includes(h)||/^p-(recherche|liste|appels|scripts|messages)$/.test(h))&&state.view!==h){state.view=h;render()}});
 $("#newBtn").onclick=()=>openNew();
 $("#goal").onclick=()=>openGoal();
 
@@ -1051,8 +1071,9 @@ function confetti(n=140){
 
 $("#main").addEventListener("scroll",closeCtMenu);
 /* boot */
-(function(){const h=location.hash.slice(1);if(["accueil","clients","pipeline","relances","contrats"].includes(h))state.view=h})();
+(function(){const h=location.hash.slice(1);if((["accueil","clients","pipeline","relances","contrats"].includes(h)||/^p-(recherche|liste|appels|scripts|messages)$/.test(h)))state.view=h})();
 init();
 </script>
+<script src="prospection.js"></script>
 </body>
 </html>
