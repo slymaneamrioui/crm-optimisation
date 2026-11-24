@@ -452,6 +452,7 @@ const LoginUI={
 </script>
 <script>
 /* ---------- configuration ---------- */
+const APP_VERSION="7 · 24 nov. 2026";
 const STATUTS=[
   {k:"À contacter",c:"#706e6b"},{k:"RDV pris",c:"#0176d3"},{k:"Découverte faite",c:"#06a59a"},
   {k:"Audit en cours",c:"#7f56d9"},{k:"Proposition envoyée",c:"#dd7a01"},{k:"Signé",c:"#2e844a"},{k:"Perdu",c:"#ba0517"}];
@@ -653,7 +654,8 @@ function renderHome(){
 function backupCard(){
   const last=store("crm-last-export"), d=last?daysFrom(last):null, n=list().length;
   const warn=!window.CRMAuth&&n&&(d===null||d<=-7);
-  return `<div class="card" style="margin-top:16px"><div class="card-h">💾 Sauvegarde${warn?'<span class="tag late">À faire</span>':""}</div><div class="card-b">
+  return `<div class="small muted" style="text-align:center;margin-top:14px">Version ${APP_VERSION}</div>
+  <div class="card" style="margin-top:16px"><div class="card-h">💾 Sauvegarde${warn?'<span class="tag late">À faire</span>':""}</div><div class="card-b">
    <div class="small muted" style="margin-bottom:10px">${window.CRMAuth?`✅ Synchronisé en ligne : tes clients sont les mêmes sur tous tes appareils où tu es connecté (${esc(CRMAuth.email()||"")}). Une sauvegarde reste utile comme copie de secours.`:`Tes données sont enregistrées sur cet appareil. Sauvegarde chaque semaine, et utilise « Importer » pour retrouver tes clients sur un autre appareil.`} ${last?`Dernière sauvegarde : ${fdate(last)}.`:"Aucune sauvegarde pour l'instant."}</div>
    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-backup="export">💾 Sauvegarder (${n} client${n>1?"s":""})</button><button class="btn" data-backup="import">📥 Importer un fichier</button>${window.CRMAuth?`<button class="btn ghost" data-backup="logout">Se déconnecter</button>`:""}</div></div></div>`;
 }

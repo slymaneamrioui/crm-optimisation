@@ -74,7 +74,7 @@ claude.use("db").then(d=>{
   },()=>{});
   d.collection("reglages").onSnapshot(s=>{
     const doc=s.docs.find(x=>x.id==="prospection");
-    if(doc){const v=doc.data()||{};reg={profil:{...DEF.profil,...(v.profil||{})},script:v.script||DEF.script,objections:v.objections||DEF.objections,messages:v.messages||DEF.messages}}
+    if(doc){const v=doc.data()||{};reg={profil:{...DEF.profil,...(v.profil||{})},script:v.script||DEF.script,objections:v.objections||DEF.objections,messages:v.messages||DEF.messages,google:v.google||null}}
     if(state.view.startsWith("p-"))softRender();
   },()=>{});
 });
@@ -137,7 +137,7 @@ function knownSirens(){const s=new Set();plist().forEach(p=>p.siren&&s.add(p.sir
 function rRecherche(){
   const S=P.search,known=knownSirens();
   const fresh=S.results.filter(r=>!known.has(r.siren));
-  $("#main").innerHTML=head("Trouver des prospects","Annuaire officiel des entreprises françaises (SIRENE)")+`
+  $("#main").innerHTML=head("Trouver des prospects","Annuaire officiel des entreprises françaises (SIRENE)")+googleCard()+`
   <div class="card" style="margin-bottom:14px"><div class="card-b">
    <form id="xSearch" class="form" style="grid-template-columns:repeat(3,1fr)">
     <div class="f"><label>Secteur</label><select name="secteur"><option value="">Tous secteurs (mot-clé)</option>${SECTEURS.map(x=>`<option ${S.secteur===x.k?"selected":""}>${esc(x.k)}</option>`).join("")}</select></div>
@@ -151,21 +151,40 @@ function rRecherche(){
      ${fresh.length?`<button class="btn sm primary ml-auto" data-xaddall>+ Ajouter les ${fresh.length} affichées</button>`:""}</div>
     ${S.results.map(r=>`<div class="list-row" style="cursor:default;flex-wrap:nowrap"><div class="avatar" style="background:${avatarColor(r.societe)}">${esc(initials(r.societe))}</div>
       <div class="grow"><div class="ellip" style="font-weight:600">${esc(r.societe)}</div>
-       <div class="small muted ellip">${esc(r.effectif||"")}${r.ville?" · "+esc(r.cp+" "+r.ville):""}</div>
+       <div class="small muted ellip">${esc(r.effectif||"")}${r.adresse?" · "+esc(tcase(r.adresse)):r.ville?" · "+esc(r.cp+" "+r.ville):""}</div>
        <div class="small muted ellip">${r.dirigeants?"👤 "+esc(r.dirigeants):""}</div></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${known.has(r.siren)?`<span class="tag soon">Déjà dans ta liste</span>`:`<button class="btn sm primary" data-xadd="${esc(r.siren)}">+ Ajouter</button>`}</div></div>`).join("")}
     ${S.page<S.pages?`<div style="padding:12px;text-align:center"><button class="btn" data-xmore ${S.loading?"disabled":""}>${S.loading?"Chargement…":"Voir plus de résultats"}</button></div>`:""}
   </div>`:!S.loading&&!S.err?`<div class="card"><div class="empty"><div class="big">🎯</div>Choisis un secteur et une ville, puis lance la recherche.<br><span class="small">Les entreprises ajoutées vont dans « Mes prospects », pas dans tes clients.</span></div></div>`:""}`;
+  bindGoogleForm();
   const f=$("#xSearch");
   f.querySelectorAll(".p-checks label").forEach(l=>l.addEventListener("click",e=>{e.preventDefault();const cb=l.querySelector("input");cb.checked=!cb.checked;l.classList.toggle("on",cb.checked)}));
   f.addEventListener("submit",e=>{e.preventDefault();S.secteur=f.secteur.value;S.lieu=f.lieu.value.trim();S.q=f.q.value.trim();S.tr=[...f.querySelectorAll("input[name=tr]:checked")].map(x=>x.value);if(!S.tr.length)S.tr=TRANCHES.map(t=>t[0]);search(false)});
 }
+function bindGoogleForm(){
+  const g=$("#xgk");if(!g)return;
+  g.addEventListener("submit",async e=>{e.preventDefault();const key=g.key.value.trim();
+    reg.google={key,auto:g.auto.checked};P.showKey=false;await saveReg();gLoad=null;
+    if(key){try{await loadGoogle(key);toast("✓ Clé enregistrée")}catch(x){toast(x.message);P.showKey=true}}
+    render()});
+}
 function mapEnt(e){
-  const s=e.siege||{};const dirs=e.dirigeants||[];const dir=dirs.find(d=>d.type==="personne physique");
-  return{siren:String(e.siren||""),siret:s.siret||"",societe:tcase(e.nom_complet||e.nom_raison_sociale||""),adresse:s.adresse||"",cp:s.code_postal||"",ville:tcase(s.libelle_commune||""),
+  const s=e.siege||{};const dirs=e.dirigeants||[];
+  // l'établissement trouvé dans la zone recherchée (sinon le siège)
+  const et=(e.matching_etablissements||[]).find(x=>x&&x.adresse)||s;
+  const ens=(et.liste_enseignes&&et.liste_enseignes[0])||(s.liste_enseignes&&s.liste_enseignes[0])||et.nom_commercial||s.nom_commercial||"";
+  const raison=String(e.nom_raison_sociale||e.nom_complet||"").replace(/\s*\(.*\)\s*$/,"");
+  const ei=!!((e.complements&&e.complements.est_entrepreneur_individuel)||e.nature_juridique==="1000");
+  let pers=dirs.filter(d=>d.type==="personne physique").map(d=>({prenom:tcase(String(d.prenoms||"").split(/\s+/)[0]),nom:tcase(d.nom||""),fonction:d.qualite||""}));
+  if(!pers.length&&ei&&raison){const w=raison.trim().split(/\s+/);pers=[{prenom:tcase(w[0]),nom:tcase(w.slice(1).join(" ")),fonction:"Entrepreneur individuel"}]}
+  const morales=dirs.filter(d=>d.type!=="personne physique").map(d=>tcase(d.denomination||"")).filter(Boolean);
+  const g=pers[0]||null;
+  return{siren:String(e.siren||""),siret:et.siret||s.siret||"",
+    societe:tcase(ens||raison),raisonSociale:tcase(raison),enseigne:tcase(ens),
+    adresse:et.adresse||s.adresse||"",cp:et.code_postal||s.code_postal||"",ville:tcase(et.libelle_commune||s.libelle_commune||""),
     naf:e.activite_principale||s.activite_principale||"",effectif:TR_LABEL[e.tranche_effectif_salarie]||TR_LABEL[s.tranche_effectif_salarie]||"",dateCreation:e.date_creation||"",
-    dirigeants:dirs.slice(0,3).map(d=>d.type==="personne physique"?tcase([d.prenoms,d.nom].filter(Boolean).join(" "))+(d.qualite?" ("+d.qualite+")":""):tcase(d.denomination||"")).filter(Boolean).join(", "),
-    prenom:dir?tcase(String(dir.prenoms||"").split(/\s+/)[0]):"",nom:dir?tcase(dir.nom||""):"",fonction:dir?(dir.qualite||""):""};
+    dirigeants:[...pers.map(d=>[d.prenom,d.nom].filter(Boolean).join(" ")+(d.fonction?" ("+d.fonction+")":"")),...morales].slice(0,4).join(", "),
+    prenom:g?g.prenom:"",nom:g?g.nom:"",fonction:g?g.fonction:""};
 }
 async function search(more){
   const S=P.search;
@@ -206,6 +225,73 @@ async function addProspect(r){
   if(!pdb)return;const ref=pdb.collection("prospects").doc();
   const p={...r,id:ref.id,secteur:P.search.secteur||"",statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso()};
   prospects.set(ref.id,p);await saveP(p);
+  return ref.id;
+}
+
+/* ---------- Google Maps : compléter téléphone, site web, adresse ---------- */
+let gLoad=null;
+function loadGoogle(key){
+  if(window.google&&google.maps&&google.maps.importLibrary)return Promise.resolve();
+  if(gLoad&&gLoad.key===key)return gLoad.p;
+  const p=new Promise((res,rej)=>{
+    window.__crmGmReady=()=>res();
+    window.gm_authFailure=()=>rej(new Error("Clé Google refusée. Vérifie la clé et que « Places API (New) » et « Maps JavaScript API » sont activées."));
+    const sc=document.createElement("script");
+    sc.src="https://maps.googleapis.com/maps/api/js?key="+encodeURIComponent(key)+"&v=weekly&loading=async&language=fr&region=FR&callback=__crmGmReady";
+    sc.async=true;sc.onerror=()=>rej(new Error("Impossible de charger Google Maps. Vérifie ta connexion."));
+    document.head.appendChild(sc);
+  });
+  gLoad={key,p};p.catch(()=>{gLoad=null});return p;
+}
+function hasKey(){return !!(reg.google&&reg.google.key)}
+async function enrich(p,silent){
+  if(!hasKey())return false;
+  try{
+    await loadGoogle(reg.google.key);
+    const {Place}=await google.maps.importLibrary("places");
+    const q=[p.enseigne||p.societe,p.adresse||[p.cp,p.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+    const {places}=await Place.searchByText({textQuery:q,fields:["displayName","nationalPhoneNumber","formattedAddress","websiteURI","googleMapsURI","rating","userRatingCount","businessStatus"],language:"fr",region:"fr",maxResultCount:1});
+    const pl=places&&places[0];
+    p.googleVerifie=today();
+    if(!pl){p.googleTrouve=false;await saveP(p);if(!silent)toast("Pas trouvé sur Google Maps : essaie « Trouver le numéro »");return false}
+    p.googleTrouve=true;
+    if(pl.nationalPhoneNumber&&!p.tel)p.tel=pl.nationalPhoneNumber;
+    if(pl.websiteURI)p.siteWeb=pl.websiteURI;
+    if(pl.googleMapsURI)p.googleMaps=pl.googleMapsURI;
+    if(pl.formattedAddress)p.adresseGoogle=pl.formattedAddress;
+    if(pl.displayName)p.nomGoogle=pl.displayName;
+    if(pl.rating)p.noteGoogle=pl.rating+" ★ ("+(pl.userRatingCount||0)+" avis)";
+    if(pl.businessStatus==="CLOSED_PERMANENTLY"){p.fermeGoogle=true}
+    await saveP(p);
+    if(!silent)toast(pl.nationalPhoneNumber?"📞 Numéro trouvé : "+pl.nationalPhoneNumber:"Trouvé sur Google Maps, mais sans numéro affiché");
+    return !!pl.nationalPhoneNumber;
+  }catch(e){
+    if(!silent||/Clé|refus|charger/.test(e.message||""))toast((e&&e.message)||"Recherche Google impossible");
+    if(/Clé|refus/.test(e.message||""))throw e;
+    return false;
+  }
+}
+let bulk=null;
+async function enrichMany(ids){
+  if(bulk)return;bulk={done:0,total:ids.length,found:0};render();
+  for(const id of ids){const p=prospects.get(id);if(!p){bulk.done++;continue}
+    try{if(await enrich(p,true))bulk.found++}catch(e){break}
+    bulk.done++;if(state.view.startsWith("p-"))render();await new Promise(r=>setTimeout(r,250));}
+  const b=bulk;bulk=null;toast("📞 "+b.found+" numéro"+(b.found>1?"s":"")+" trouvé"+(b.found>1?"s":"")+" sur "+b.total);render();
+}
+function siteContact(p){if(!p.siteWeb)return"";try{const u=new URL(p.siteWeb);return u.origin+"/contact"}catch(e){return""}}
+function mailInfo(p){
+  if(p.email)return `<b>Courriel</b><a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`;
+  return `<b>Courriel</b><span style="color:#9a5300">Aucun courriel trouvé : demande-le pendant l'appel</span>${p.siteWeb?` · <a href="${esc(siteContact(p))}" target="_blank" rel="noopener">voir la page contact du site</a>`:""}`;
+}
+function sansNumero(){return plist().filter(p=>!p.tel&&!p.googleVerifie&&A_APPELER.includes(p.statut||"Nouveau"))}
+function googleCard(){
+  const k=hasKey();
+  return `<div class="card" style="margin-bottom:14px"><div class="card-h">📞 Numéros de téléphone (Google Maps)${k?`<span class="tag" style="background:#e8f6ec;color:#1f6b35">Activé</span>`:`<span class="tag today">À configurer</span>`}<button type="button" class="btn ghost sm ml-auto" data-xgkey>${k?"Modifier":"Configurer"}</button></div>
+   ${P.showKey||!k?`<div class="card-b"><div class="small muted" style="margin-bottom:8px">L'annuaire officiel ne donne pas les téléphones. Avec une clé Google, l'appli va chercher automatiquement le numéro, le site web et l'adresse sur la fiche Google Maps de chaque prospect.</div>
+    <form id="xgk" style="display:flex;gap:8px;flex-wrap:wrap"><input name="key" value="${esc((reg.google&&reg.google.key)||"")}" placeholder="Colle ta clé API Google (AIza…)" style="flex:1;min-width:220px;padding:9px 11px;border:1px solid #d4d4d4;border-radius:8px">
+    <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="auto" ${!reg.google||reg.google.auto!==false?"checked":""}> Chercher le numéro dès que j'ajoute un prospect</label>
+    <button class="btn primary">Enregistrer</button></form></div>`:""}</div>`;
 }
 
 /* 2. Mes prospects */
@@ -216,12 +302,16 @@ function rListe(){
   function match(p,g){const st=p.statut||"Nouveau";if(g==="Tous")return true;if(g==="À appeler")return A_APPELER.includes(st)&&(!p.prochainAppel||p.prochainAppel<=t);return st===g}
   const L=all.filter(p=>match(p,P.filter)&&(!P.secFilter||p.secteur===P.secFilter)).sort((a,b)=>(a.prochainAppel||"").localeCompare(b.prochainAppel||"")||(b.createdAt||"").localeCompare(a.createdAt||""));
   const secs=[...new Set(all.map(p=>p.secteur).filter(Boolean))];
-  $("#main").innerHTML=head("Mes prospects",`${all.length} au total · séparés de tes clients`)+`
+  const sn=sansNumero();
+  $("#main").innerHTML=head("Mes prospects",`${all.length} au total · séparés de tes clients`)+
+  (bulk?`<div class="banner" style="background:#f1ecfd;border-color:#d9cdfb;color:#3b2a8a">📞 Recherche des numéros sur Google Maps : ${bulk.done}/${bulk.total} · ${bulk.found} trouvé${bulk.found>1?"s":""}</div>`
+   :sn.length?(hasKey()?`<div class="banner" style="background:#f1ecfd;border-color:#d9cdfb;color:#3b2a8a;display:flex;gap:10px;align-items:center;flex-wrap:wrap">${sn.length} prospect${sn.length>1?"s":""} sans numéro <button class="btn sm primary" data-xenrichall>📞 Chercher leurs numéros sur Google Maps</button></div>`
+     :`<div class="banner" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${sn.length} prospect${sn.length>1?"s":""} sans numéro. Configure Google Maps pour les trouver automatiquement. <button class="btn sm" data-v="p-recherche">Configurer</button></div>`):"")+`
   <div class="toolbar">${groups.map(g=>`<button class="chip ${P.filter===g?"on":""}" data-xfilter="${esc(g)}">${esc(g)} <b>${cnt(g)}</b></button>`).join("")}
    ${secs.length>1?`<select id="xSecF" style="margin-left:auto;padding:7px 10px;border:1px solid #d4d4d4;border-radius:8px"><option value="">Tous les secteurs</option>${secs.map(s=>`<option ${P.secFilter===s?"selected":""}>${esc(s)}</option>`).join("")}</select>`:""}</div>
   <div class="card">${L.length?L.map(p=>`<div class="list-row" data-xopen="${esc(p.id)}" style="flex-wrap:nowrap"><div class="avatar" style="background:${avatarColor(p.societe)}">${esc(initials(p.societe))}</div>
      <div class="grow"><div class="ellip" style="font-weight:600">${esc(p.societe||"Sans nom")}</div><div class="small muted ellip">${esc([[p.prenom,p.nom].filter(Boolean).join(" "),p.secteur,p.ville].filter(Boolean).join(" · "))}</div>
-     <div class="mrow-meta">${ppill(p.statut)}${p.prochainAppel&&A_APPELER.includes(p.statut)?relTag(p.prochainAppel):""}${p.nbAppels?`<span class="small muted">${p.nbAppels} appel${p.nbAppels>1?"s":""}</span>`:""}</div></div>
+     <div class="mrow-meta">${ppill(p.statut)}${p.prochainAppel&&A_APPELER.includes(p.statut)?relTag(p.prochainAppel):""}${p.nbAppels?`<span class="small muted">${p.nbAppels} appel${p.nbAppels>1?"s":""}</span>`:""}${p.email?"":`<span class="small" style="color:#9a5300">pas de courriel</span>`}</div></div>
      ${p.tel?`<a class="qcall" href="${esc(telHref(p.tel))}" aria-label="Appeler">📞</a>`:`<span class="tag" style="background:#f1f1f1;color:#555">Pas de numéro</span>`}</div>`).join("")
    :`<div class="empty"><div class="big">📋</div>Aucun prospect ici.<br><button class="btn primary" data-v="p-recherche" style="margin-top:10px">🔍 Trouver des prospects</button></div>`}</div>`;
   const sf=$("#xSecF");if(sf)sf.onchange=()=>{P.secFilter=sf.value;rListe()};
@@ -231,7 +321,15 @@ function openProspect(id){
   const hist=(p.historique||[]).slice().reverse();
   openModal(`<div class="modal-h">${esc(p.societe||"Prospect")}<span style="margin-left:10px">${ppill(p.statut)}</span></div>
   <form id="xpf"><div class="modal-b">
-   <div class="small muted" style="margin-bottom:12px">${esc([p.secteur,p.effectif,[p.adresse].filter(Boolean).join("")].filter(Boolean).join(" · "))}${p.dirigeants?`<br>👤 ${esc(p.dirigeants)}`:""}${p.siret?`<br>SIRET ${esc(p.siret)}`:""}</div>
+   <div class="p-facts">
+    <div><b>Adresse</b>${esc(p.adresseGoogle||tcase(p.adresse)||"—")}</div>
+    <div><b>Dirigeant(s)</b>${esc(p.dirigeants||"—")}</div>
+    <div><b>Entreprise</b>${esc([p.raisonSociale&&p.raisonSociale!==p.societe?p.raisonSociale:"",p.secteur,p.effectif].filter(Boolean).join(" · ")||"—")}</div>
+    <div><b>SIRET</b>${esc(p.siret||"—")}</div>
+    <div>${mailInfo(p)}</div>
+    ${p.siteWeb||p.googleMaps||p.noteGoogle?`<div><b>En ligne</b>${p.siteWeb?`<a href="${esc(p.siteWeb)}" target="_blank" rel="noopener">Site web</a> · `:""}${p.googleMaps?`<a href="${esc(p.googleMaps)}" target="_blank" rel="noopener">Google Maps</a>`:""}${p.noteGoogle?" · "+esc(p.noteGoogle):""}</div>`:""}
+    ${p.fermeGoogle?`<div style="color:var(--bad)"><b>Attention</b>Indiqué comme définitivement fermé sur Google</div>`:""}
+   </div>
    <div class="form">
     <div class="f"><label>Prénom</label><input name="prenom" value="${esc(p.prenom||"")}"></div>
     <div class="f"><label>Nom</label><input name="nom" value="${esc(p.nom||"")}"></div>
@@ -241,7 +339,7 @@ function openProspect(id){
     <div class="f"><label>Prochain appel</label><input name="prochainAppel" type="date" value="${esc(p.prochainAppel||"")}"></div>
     <div class="f full"><label>Notes</label><textarea name="notes">${esc(p.notes||"")}</textarea></div>
    </div>
-   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${gLink(p)}${p.tel?`<a class="btn sm" href="${esc(telHref(p.tel))}">📞 Appeler</a>`:""}<button type="button" class="btn sm" data-xmsg="prospects:${esc(p.id)}">✉️ Message</button>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${hasKey()?`<button type="button" class="btn sm primary" data-xenrich="${esc(p.id)}">📞 Compléter avec Google Maps</button>`:""}${gLink(p)}${p.tel?`<a class="btn sm" href="${esc(telHref(p.tel))}">📞 Appeler</a>`:""}<button type="button" class="btn sm" data-xmsg="prospects:${esc(p.id)}">✉️ Message</button>
     ${p.statut!=="Converti en client"?`<button type="button" class="btn sm" data-xconvert="${esc(p.id)}">➡️ Passer en client</button>`:p.clientId?`<button type="button" class="btn sm" data-xclient="${esc(p.clientId)}">Voir la fiche client</button>`:""}</div>
    ${hist.length?`<div class="sec-t">Historique</div><ul class="timeline">${hist.map(h=>`<li><span class="tl-ic" style="background:${PSC[h.statutApres]||"#0176d3"}">${h.type==="message"?"✉":"📞"}</span><div class="small muted">${fdate(h.date)}</div><div>${esc(h.resultat||"")}${h.note?" — "+esc(h.note):""}</div></li>`).join("")}</ul>`:""}
   </div><div class="modal-f"><button type="button" class="btn ghost danger" data-xdel="${esc(p.id)}">Supprimer</button><span style="flex:1"></span><button type="button" class="btn" data-close>Fermer</button><button class="btn primary">Enregistrer</button></div></form>`);
@@ -262,7 +360,9 @@ function rAppels(){
      <div class="p-call-h"><div class="avatar" style="width:46px;height:46px;font-size:17px;background:${avatarColor(p.societe)}">${esc(initials(p.societe))}</div>
       <div class="grow"><div style="font-size:19px;font-weight:700">${esc(p.societe)}</div><div class="small muted">${esc([p.secteur,p.effectif,p.ville].filter(Boolean).join(" · "))}</div>
       <div class="small" style="margin-top:3px">${[p.prenom,p.nom].filter(Boolean).length?"👤 "+esc([p.prenom,p.nom].filter(Boolean).join(" "))+(p.fonction?" ("+esc(p.fonction)+")":""):"Contact inconnu"} ${ppill(p.statut)} ${p.nbAppels?`<span class="small muted">· ${p.nbAppels} appel${p.nbAppels>1?"s":""} déjà</span>`:""}</div></div></div>
-     <div class="p-tel">${p.tel?`<a class="btn primary p-big" href="${esc(telHref(p.tel))}">📞 Appeler le ${esc(p.tel)}</a>`:`<div class="p-notel"><div class="small muted" style="margin-bottom:6px">Pas encore de numéro :</div><div style="display:flex;gap:8px;flex-wrap:wrap">${gLink(p)}<input id="xTel" type="tel" placeholder="Colle le numéro ici" style="flex:1;min-width:150px;padding:9px 11px;border:1px solid #d4d4d4;border-radius:8px"><button class="btn" data-xsavetel="${esc(p.id)}">Enregistrer</button></div></div>`}</div>
+     <div class="p-tel">${p.tel?`<a class="btn primary p-big" href="${esc(telHref(p.tel))}">📞 Appeler le ${esc(p.tel)}</a>`:`<div class="p-notel"><div class="small muted" style="margin-bottom:6px">Pas encore de numéro :</div><div style="display:flex;gap:8px;flex-wrap:wrap">${hasKey()?`<button class="btn sm primary" data-xenrich="${esc(p.id)}">📞 Chercher sur Google Maps</button>`:""}${gLink(p)}<input id="xTel" type="tel" placeholder="Colle le numéro ici" style="flex:1;min-width:150px;padding:9px 11px;border:1px solid #d4d4d4;border-radius:8px"><button class="btn" data-xsavetel="${esc(p.id)}">Enregistrer</button></div></div>`}</div>
+     <div class="small muted" style="padding:0 16px 10px">📍 ${esc(p.adresseGoogle||tcase(p.adresse)||"Adresse inconnue")}${p.siteWeb?` · <a href="${esc(p.siteWeb)}" target="_blank" rel="noopener">site web</a>`:""}${p.noteGoogle?" · "+esc(p.noteGoogle):""}${p.fermeGoogle?` · <span style="color:var(--bad)">fermé selon Google</span>`:""}</div>
+     <div class="small" style="padding:0 16px 10px">${p.email?`✉️ <a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`:`<div class="p-mail">✉️ <b>Aucun courriel trouvé</b> : demande-le pendant l'appel.${p.siteWeb?` <a href="${esc(siteContact(p))}" target="_blank" rel="noopener">Page contact du site</a>`:""}<div style="display:flex;gap:8px;margin-top:6px"><input id="xMail" type="email" placeholder="Courriel donné au téléphone" style="flex:1;padding:8px 10px;border:1px solid #d4d4d4;border-radius:8px"><button class="btn sm" data-xsavemail="${esc(p.id)}">Enregistrer</button></div></div>`}</div>
      ${p.notes?`<div class="small" style="padding:0 16px 10px">📝 ${esc(p.notes)}</div>`:""}
      <div class="p-script"><div class="sec-t" style="margin:0 0 6px">Ton script</div>${esc(fill(reg.script,p)).replace(/\n/g,"<br>")}</div>
      <details class="p-obj"><summary>Objections et réponses</summary>${(reg.objections||[]).map(o=>`<div class="p-obj-i"><b>${esc(o.q)}</b><div>${esc(o.r)}</div></div>`).join("")}</details>
@@ -285,6 +385,7 @@ function rAppels(){
 }
 function logAppel(p,resultat,statut,extra){
   const note=($("#xNote")||{}).value||"";
+  const mail=(($("#xMail")||{}).value||"").trim();if(mail&&!p.email)p.email=mail;
   p.historique=[...(p.historique||[]),{date:today(),ts:Date.now(),type:"appel",resultat,note,statutApres:statut}];
   p.nbAppels=(p.nbAppels||0)+1;p.statut=statut;Object.assign(p,extra||{});
   if(note)p.notes=(p.notes?p.notes+"\n":"")+fdate(today())+" : "+note;
@@ -305,6 +406,7 @@ async function convert(p,extra){
   if(!pdb)return;
   const ref=db.collection("clients").doc();
   const keep=["societe","prenom","nom","fonction","tel","email","siren","siret","adresse","cp","ville","naf","effectif","dirigeants","dateCreation","secteur"];
+  if(p.siteWeb){c.marketing={site:"Oui",urlSite:p.siteWeb}}
   const c={statut:"À contacter",source:"Prospection directe",createdAt:iso(),notes:p.notes||"",
     activites:(p.historique||[]).map(h=>({date:h.date,canal:h.type==="message"?"Email":"Appel",resume:(h.resultat||"")+(h.note?" — "+h.note:""),ts:h.ts||Date.now()}))};
   keep.forEach(k=>{if(p[k])c[k]=p[k]});
@@ -399,13 +501,17 @@ function send(how){
 /* ---------- clics ---------- */
 document.addEventListener("click",e=>{
   if(e.target.closest('a[href^="tel:"],a[href^="sms:"],a[href^="mailto:"],a[target=_blank]'))return;
-  const t=e.target.closest("[data-xopen],[data-xadd],[data-xaddall],[data-xmore],[data-xfilter],[data-xsess],[data-xres],[data-xpanel],[data-xrappel],[data-xrdv],[data-xsavetel],[data-xunskip],[data-xconvert],[data-xclient],[data-xdel],[data-xmsg],[data-xtpl],[data-xsend],[data-xaddobj],[data-xdelobj],[data-xresetscripts],[data-xaddmsg],[data-xdelmsg],[data-xresetmsgs],.p-subnav [data-v],.empty [data-v]");
+  const t=e.target.closest("[data-xopen],[data-xadd],[data-xaddall],[data-xmore],[data-xfilter],[data-xsess],[data-xres],[data-xpanel],[data-xrappel],[data-xrdv],[data-xsavetel],[data-xunskip],[data-xconvert],[data-xclient],[data-xdel],[data-xmsg],[data-xtpl],[data-xsend],[data-xaddobj],[data-xdelobj],[data-xresetscripts],[data-xaddmsg],[data-xdelmsg],[data-xresetmsgs],.p-subnav [data-v],.empty [data-v],.banner [data-v],[data-xgkey],[data-xenrichall],[data-xenrich],[data-xsavemail]");
   if(!t)return;
   const ds=t.dataset;
-  if(t.matches(".p-subnav [data-v],.empty [data-v]")){go(ds.v);return}
+  if(t.matches(".p-subnav [data-v],.empty [data-v],.banner [data-v]")){go(ds.v);return}
+  if(ds.xsavemail){const p=prospects.get(ds.xsavemail);const v=(($("#xMail")||{}).value||"").trim();if(p&&/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){p.email=v;saveP(p);toast("✓ Courriel enregistré");rAppels()}else toast("Courriel invalide");return}
+  if(t.hasAttribute("data-xgkey")){P.showKey=!P.showKey;render();return}
+  if(t.hasAttribute("data-xenrichall")){enrichMany(sansNumero().map(p=>p.id));return}
+  if(ds.xenrich){const p=prospects.get(ds.xenrich);if(p){t.disabled=true;t.textContent="Recherche…";enrich(p).then(()=>{if($("#scrim").classList.contains("open"))openProspect(p.id);render()})}return}
   if(ds.xopen){openProspect(ds.xopen);return}
-  if(ds.xadd){const r=P.search.results.find(x=>x.siren===ds.xadd);if(r){addProspect(r).then(()=>{toast("+ "+r.societe+" ajouté à tes prospects");rRecherche()})}return}
-  if(t.hasAttribute("data-xaddall")){const k=knownSirens();const rs=P.search.results.filter(r=>!k.has(r.siren));t.disabled=true;Promise.all(rs.map(addProspect)).then(()=>{toast("+ "+rs.length+" prospects ajoutés");rRecherche()});return}
+  if(ds.xadd){const r=P.search.results.find(x=>x.siren===ds.xadd);if(r){addProspect(r).then(id=>{toast("+ "+r.societe+" ajouté à tes prospects");rRecherche();if(hasKey()&&reg.google.auto!==false)enrichMany([id])})}return}
+  if(t.hasAttribute("data-xaddall")){const k=knownSirens();const rs=P.search.results.filter(r=>!k.has(r.siren));t.disabled=true;Promise.all(rs.map(addProspect)).then(ids=>{toast("+ "+rs.length+" prospects ajoutés");rRecherche();if(hasKey()&&reg.google.auto!==false)enrichMany(ids)});return}
   if(t.hasAttribute("data-xmore")){search(true);return}
   if(ds.xfilter){P.filter=ds.xfilter;rListe();return}
   if(ds.xsess!==undefined){P.sessSec=ds.xsess;P.panel=null;rAppels();return}
@@ -434,6 +540,10 @@ document.addEventListener("click",e=>{
 const css=document.createElement("style");
 css.textContent=`
 .p-head{margin-bottom:14px}
+.p-mail{background:#fff8ec;border:1px solid #f3d9a8;border-radius:10px;padding:10px 12px;color:#7a4300}
+.p-facts{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:13px;margin-bottom:14px;padding:12px;background:#fafafa;border-radius:10px}
+.p-facts b{display:block;font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.04em}
+@media (max-width:760px){.p-facts{grid-template-columns:1fr}}
 .p-eyebrow{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#5b3cc4;background:#f1ecfd;border-radius:6px;padding:3px 8px;margin-bottom:8px}
 .p-subnav{display:flex;gap:4px;background:#ebe6fb;border-radius:12px;padding:4px;overflow-x:auto;scrollbar-width:none}
 .p-subnav::-webkit-scrollbar{display:none}
