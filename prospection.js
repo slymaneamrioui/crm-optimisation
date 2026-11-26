@@ -147,7 +147,7 @@ function rRecherche(){
     <div class="f full" style="flex-direction:row;gap:8px"><button class="btn primary" ${S.loading?"disabled":""}>${S.loading&&!S.results.length?"Recherche…":"🔍 Rechercher"}</button></div>
    </form></div></div>
   ${S.err?`<div class="banner">${esc(S.err)}</div>`:""}
-  ${S.results.length?`<div class="card"><div class="card-h">${S.total.toLocaleString("fr-FR")} entreprise${S.total>1?"s":""} trouvée${S.total>1?"s":""}${S.villeLabel?" · "+esc(S.villeLabel):""}${S.fermes?`<span class="small muted" style="font-weight:400">· ${S.fermes} fermée${S.fermes>1?"s":""} masquée${S.fermes>1?"s":""}</span>`:""}
+  ${S.results.length?`<div class="card"><div class="card-h">${S.total.toLocaleString("fr-FR")} entreprise${S.total>1?"s":""} trouvée${S.total>1?"s":""}${S.villeLabel?" · "+esc(S.villeLabel):""}${S.fermes?`<span class="small muted" style="font-weight:400">· ${S.fermes} fermée${S.fermes>1?"s":""} masquée${S.fermes>1?"s":""}</span>`:""}${S.opposees?`<span class="small muted" style="font-weight:400">· ${S.opposees} opposée${S.opposees>1?"s":""} à la prospection, masquée${S.opposees>1?"s":""}</span>`:""}
      ${fresh.length?`<button class="btn sm primary ml-auto" data-xaddall>+ Ajouter les ${fresh.length} affichées</button>`:""}</div>
     ${S.results.map(r=>`<div class="list-row" style="cursor:default;flex-wrap:nowrap"><div class="avatar" style="background:${avatarColor(r.societe)}">${esc(initials(r.societe))}</div>
       <div class="grow"><div class="ellip" style="font-weight:600">${esc(r.societe)}</div>
@@ -173,20 +173,24 @@ function mapEnt(e){
   // l'établissement trouvé dans la zone recherchée (sinon le siège)
   const ms=(e.matching_etablissements||[]).filter(x=>x&&x.adresse);
   const et=ms.find(x=>x.etat_administratif!=="F")||ms[0]||s;
-  const ferme=e.etat_administratif==="F"||et.etat_administratif==="F"||(!ms.length&&s.etat_administratif==="F");
+  const ferme=e.etat_administratif==="F"||et.etat_administratif==="F"||(!ms.length&&s.etat_administratif==="F")||e.nombre_etablissements_ouverts===0;
+  // l'entreprise refuse l'utilisation de ses données pour la prospection commerciale : on la respecte
+  const opposition=e.opposition_diffusion_commerciale===true||e.statut_diffusion==="P";
   const ens=(et.liste_enseignes&&et.liste_enseignes[0])||(s.liste_enseignes&&s.liste_enseignes[0])||et.nom_commercial||s.nom_commercial||"";
   const raison=String(e.nom_raison_sociale||e.nom_complet||"").replace(/\s*\(.*\)\s*$/,"");
   const ei=!!((e.complements&&e.complements.est_entrepreneur_individuel)||e.nature_juridique==="1000");
-  let pers=dirs.filter(d=>d.type==="personne physique").map(d=>({prenom:tcase(String(d.prenoms||"").split(/\s+/)[0]),nom:tcase(d.nom||""),fonction:d.qualite||""}));
+  const phys=d=>(d.type_dirigeant||d.type)==="personne physique";
+  const nomUsage=n=>tcase(String(n||"").replace(/\s*\(.*?\)\s*/g," ").trim());
+  let pers=dirs.filter(phys).map(d=>({prenom:tcase(String(d.prenoms||"").split(/\s+/)[0]),nom:nomUsage(d.nom),fonction:d.qualite||""}));
   if(!pers.length&&ei&&raison){const w=raison.trim().split(/\s+/);pers=[{prenom:tcase(w[0]),nom:tcase(w.slice(1).join(" ")),fonction:"Entrepreneur individuel"}]}
-  const morales=dirs.filter(d=>d.type!=="personne physique").map(d=>tcase(d.denomination||"")).filter(Boolean);
+  const morales=dirs.filter(d=>!phys(d)).map(d=>tcase(d.denomination||"")).filter(Boolean);
   const g=pers[0]||null;
   return{siren:String(e.siren||""),siret:et.siret||s.siret||"",
     societe:tcase(ens||raison),raisonSociale:tcase(raison),enseigne:tcase(ens),
     adresse:et.adresse||s.adresse||"",cp:et.code_postal||s.code_postal||"",ville:tcase(et.libelle_commune||s.libelle_commune||""),
     naf:e.activite_principale||s.activite_principale||"",effectif:TR_LABEL[e.tranche_effectif_salarie]||TR_LABEL[s.tranche_effectif_salarie]||"",dateCreation:e.date_creation||"",
     dirigeants:[...pers.map(d=>[d.prenom,d.nom].filter(Boolean).join(" ")+(d.fonction?" ("+d.fonction+")":"")),...morales].slice(0,4).join(", "),
-    prenom:g?g.prenom:"",nom:g?g.nom:"",fonction:g?g.fonction:"",ferme,verifieLe:todayStr()};
+    prenom:g?g.prenom:"",nom:g?g.nom:"",fonction:g?g.fonction:"",ferme,opposition,verifieLe:todayStr()};
 }
 async function resolveLieu(l){
   l=String(l||"").trim();
@@ -218,7 +222,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const netMsg=e=>(e&&e.message&&!/fetch|network/i.test(e.message))?e.message:"Recherche impossible : vérifie ta connexion internet.";
 async function search(more){
   const S=P.search;
-  if(!more){S.page=0;S.pages=0;S.total=0;S.results=[];S.cps=null;S.villeLabel="";S.fermes=0}
+  if(!more){S.page=0;S.pages=0;S.total=0;S.results=[];S.cps=null;S.villeLabel="";S.fermes=0;S.opposees=0}
   S.loading=true;S.err="";rRecherche();
   try{
     if(!more){const L=await resolveLieu(S.lieu);S.cps=L.cps;S.villeLabel=L.label}
@@ -226,14 +230,15 @@ async function search(more){
     S.page=j.page||S.page+1;S.pages=j.total_pages||0;S.total=j.total_results||0;
     const all=(j.results||[]).map(mapEnt);
     S.fermes=(S.fermes||0)+all.filter(r=>r.ferme).length;
-    S.results=S.results.concat(all.filter(r=>!r.ferme));
+    S.opposees=(S.opposees||0)+all.filter(r=>!r.ferme&&r.opposition).length;
+    S.results=S.results.concat(all.filter(r=>!r.ferme&&!r.opposition));
     if(!S.results.length)S.err="Aucune entreprise trouvée. Élargis la zone ou la taille.";
   }catch(e){S.err=netMsg(e)}
   S.loading=false;if(state.view==="p-recherche")rRecherche();
 }
 async function addProspect(r){
   if(!pdb)return;const ref=pdb.collection("prospects").doc();
-  const p={...r,ferme:undefined,id:ref.id,secteur:P.search.secteur||"",statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso()};
+  const p={...r,ferme:undefined,opposition:undefined,id:ref.id,secteur:P.search.secteur||"",statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso()};
   prospects.set(ref.id,p);await saveP(p);
   return ref.id;
 }
@@ -278,9 +283,10 @@ async function generate(){
         if(R.added>=R.target||R.stop)break;
         const r=mapEnt(e);R.vus++;
         if(r.ferme){R.fermes++;continue}
+        if(r.opposition){R.opp=(R.opp||0)+1;continue}
         if(known.has(r.siren)){R.deja++;continue}
         known.add(r.siren);
-        const p={...r,ferme:undefined,secteur:G.secteur,statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso(),origine:"Générateur de leads"};
+        const p={...r,ferme:undefined,opposition:undefined,secteur:G.secteur,statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso(),origine:"Générateur de leads"};
         if(k){
           if(gCalls>=maxG){R.msg="Arrêt : limite de recherches Google atteinte pour cette génération (protection de ton quota).";R.stop=true;break}
           R.etape="Recherche du numéro de "+r.societe+"…";redraw();
