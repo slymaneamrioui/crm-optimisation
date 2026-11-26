@@ -137,8 +137,8 @@ function knownSirens(){const s=new Set();plist().forEach(p=>p.siren&&s.add(p.sir
 function rRecherche(){
   const S=P.search,known=knownSirens();
   const fresh=S.results.filter(r=>!known.has(r.siren));
-  $("#main").innerHTML=head("Trouver des prospects","Annuaire officiel des entreprises françaises (SIRENE)")+googleCard()+`
-  <div class="card" style="margin-bottom:14px"><div class="card-b">
+  $("#main").innerHTML=head("Trouver des prospects","Annuaire officiel des entreprises françaises (SIRENE)")+googleCard()+genCard()+`
+  <div class="card" style="margin-bottom:14px"><div class="card-h">🔍 Recherche manuelle</div><div class="card-b">
    <form id="xSearch" class="form" style="grid-template-columns:repeat(3,1fr)">
     <div class="f"><label>Secteur</label><select name="secteur"><option value="">Tous secteurs (mot-clé)</option>${SECTEURS.map(x=>`<option ${S.secteur===x.k?"selected":""}>${esc(x.k)}</option>`).join("")}</select></div>
     <div class="f"><label>Ville, code postal ou département</label><input name="lieu" value="${esc(S.lieu)}" placeholder="Ex. Lyon, 69003 ou 69"></div>
@@ -156,7 +156,7 @@ function rRecherche(){
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${known.has(r.siren)?`<span class="tag soon">Déjà dans ta liste</span>`:`<button class="btn sm primary" data-xadd="${esc(r.siren)}">+ Ajouter</button>`}</div></div>`).join("")}
     ${S.page<S.pages?`<div style="padding:12px;text-align:center"><button class="btn" data-xmore ${S.loading?"disabled":""}>${S.loading?"Chargement…":"Voir plus de résultats"}</button></div>`:""}
   </div>`:!S.loading&&!S.err?`<div class="card"><div class="empty"><div class="big">🎯</div>Choisis un secteur et une ville, puis lance la recherche.<br><span class="small">Les entreprises ajoutées vont dans « Mes prospects », pas dans tes clients.</span></div></div>`:""}`;
-  bindGoogleForm();
+  bindGoogleForm();bindGen();
   const f=$("#xSearch");
   f.querySelectorAll(".p-checks label").forEach(l=>l.addEventListener("click",e=>{e.preventDefault();const cb=l.querySelector("input");cb.checked=!cb.checked;l.classList.toggle("on",cb.checked)}));
   f.addEventListener("submit",e=>{e.preventDefault();S.secteur=f.secteur.value;S.lieu=f.lieu.value.trim();S.q=f.q.value.trim();S.tr=[...f.querySelectorAll("input[name=tr]:checked")].map(x=>x.value);if(!S.tr.length)S.tr=TRANCHES.map(t=>t[0]);search(false)});
@@ -188,41 +188,47 @@ function mapEnt(e){
     dirigeants:[...pers.map(d=>[d.prenom,d.nom].filter(Boolean).join(" ")+(d.fonction?" ("+d.fonction+")":"")),...morales].slice(0,4).join(", "),
     prenom:g?g.prenom:"",nom:g?g.nom:"",fonction:g?g.fonction:"",ferme,verifieLe:todayStr()};
 }
+async function resolveLieu(l){
+  l=String(l||"").trim();
+  if(!l)return{cps:null,label:""};
+  if(/^\d{5}$/.test(l))return{cps:{code_postal:l},label:l};
+  if(/^(\d{2,3}|2a|2b)$/i.test(l))return{cps:{departement:l.toUpperCase()},label:"département "+l.toUpperCase()};
+  const r=await fetch("https://geo.api.gouv.fr/communes?nom="+encodeURIComponent(l)+"&fields=nom,codesPostaux,codeDepartement&boost=population&limit=1");
+  const j=r.ok?await r.json():[];
+  if(!j.length)throw new Error("Ville introuvable : « "+l+" ». Essaie avec le code postal.");
+  return{cps:{code_postal:j[0].codesPostaux.slice(0,30).join(",")},label:j[0].nom+" ("+j[0].codeDepartement+")"};
+}
+async function fetchPage({secteur,q,cps,tr,page}){
+  const sec=SEC(secteur);
+  if(!sec&&!q&&!cps)throw new Error("Choisis au moins un secteur, un mot-clé ou un lieu.");
+  const u=new URL("https://recherche-entreprises.api.gouv.fr/search");
+  if(sec)u.searchParams.set("activite_principale",sec.naf.join(","));
+  if(q)u.searchParams.set("q",q);
+  if(cps)Object.entries(cps).forEach(([k,v])=>u.searchParams.set(k,v));
+  u.searchParams.set("tranche_effectif_salarie",(tr&&tr.length?tr:TRANCHES.map(t=>t[0])).join(","));
+  u.searchParams.set("etat_administratif","A");
+  u.searchParams.set("per_page","25");u.searchParams.set("page",String(page||1));
+  let r;
+  for(let essai=0;essai<3;essai++){r=await fetch(u);if(r.status!==429)break;await sleep(1500*(essai+1))}
+  if(r.status===429)throw new Error("Trop de recherches d'un coup : attends quelques secondes et réessaie.");
+  if(!r.ok)throw new Error("La recherche a échoué (erreur "+r.status+"). Réessaie dans un instant.");
+  return r.json();
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const netMsg=e=>(e&&e.message&&!/fetch|network/i.test(e.message))?e.message:"Recherche impossible : vérifie ta connexion internet.";
 async function search(more){
   const S=P.search;
   if(!more){S.page=0;S.pages=0;S.total=0;S.results=[];S.cps=null;S.villeLabel="";S.fermes=0}
   S.loading=true;S.err="";rRecherche();
   try{
-    if(!more){
-      const l=S.lieu;
-      if(/^\d{5}$/.test(l))S.cps={code_postal:l};
-      else if(/^(\d{2,3}|2a|2b)$/i.test(l))S.cps={departement:l.toUpperCase()};
-      else if(l){
-        const r=await fetch("https://geo.api.gouv.fr/communes?nom="+encodeURIComponent(l)+"&fields=nom,codesPostaux,codeDepartement&boost=population&limit=1");
-        const j=r.ok?await r.json():[];
-        if(!j.length)throw new Error("Ville introuvable : « "+l+" ». Essaie avec le code postal.");
-        S.cps={code_postal:j[0].codesPostaux.slice(0,30).join(",")};S.villeLabel=j[0].nom+" ("+j[0].codeDepartement+")";
-      }
-    }
-    const sec=SEC(S.secteur);
-    if(!sec&&!S.q&&!S.cps)throw new Error("Choisis au moins un secteur, un mot-clé ou un lieu.");
-    const u=new URL("https://recherche-entreprises.api.gouv.fr/search");
-    if(sec)u.searchParams.set("activite_principale",sec.naf.join(","));
-    if(S.q)u.searchParams.set("q",S.q);
-    if(S.cps)Object.entries(S.cps).forEach(([k,v])=>u.searchParams.set(k,v));
-    u.searchParams.set("tranche_effectif_salarie",S.tr.join(","));
-    u.searchParams.set("etat_administratif","A");
-    u.searchParams.set("per_page","25");u.searchParams.set("page",String(S.page+1));
-    const r=await fetch(u);
-    if(r.status===429)throw new Error("Trop de recherches d'un coup : attends quelques secondes et réessaie.");
-    if(!r.ok)throw new Error("La recherche a échoué (erreur "+r.status+"). Réessaie dans un instant.");
-    const j=await r.json();
+    if(!more){const L=await resolveLieu(S.lieu);S.cps=L.cps;S.villeLabel=L.label}
+    const j=await fetchPage({secteur:S.secteur,q:S.q,cps:S.cps,tr:S.tr,page:S.page+1});
     S.page=j.page||S.page+1;S.pages=j.total_pages||0;S.total=j.total_results||0;
     const all=(j.results||[]).map(mapEnt);
     S.fermes=(S.fermes||0)+all.filter(r=>r.ferme).length;
     S.results=S.results.concat(all.filter(r=>!r.ferme));
     if(!S.results.length)S.err="Aucune entreprise trouvée. Élargis la zone ou la taille.";
-  }catch(e){S.err=(e&&e.message&&!/fetch|network/i.test(e.message))?e.message:"Recherche impossible : vérifie ta connexion internet."}
+  }catch(e){S.err=netMsg(e)}
   S.loading=false;if(state.view==="p-recherche")rRecherche();
 }
 async function addProspect(r){
@@ -230,6 +236,71 @@ async function addProspect(r){
   const p={...r,ferme:undefined,id:ref.id,secteur:P.search.secteur||"",statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso()};
   prospects.set(ref.id,p);await saveP(p);
   return ref.id;
+}
+
+/* ---------- générateur de leads ---------- */
+const G={secteur:"Restaurants",lieu:"",n:20,onlyPhone:true,run:null};
+function genCard(){
+  const R=G.run,k=hasKey();
+  if(R&&R.running)return `<div class="card p-gen" style="margin-bottom:14px"><div class="card-h">⚡ Génération en cours…<button type="button" class="btn sm ml-auto" data-xgenstop>Arrêter</button></div><div class="card-b">
+    <div class="p-bar"><div style="width:${Math.min(100,Math.round(R.added/R.target*100))}%"></div></div>
+    <div class="small" style="margin-top:8px"><b>${R.added}/${R.target}</b> leads ajoutés · ${R.vus} entreprises examinées · ${R.fermes} fermées écartées${k?` · ${R.sansNum} sans numéro écartées`:""}${R.deja?` · ${R.deja} déjà dans ta liste`:""}</div>
+    <div class="small muted" style="margin-top:4px">${esc(R.etape||"")}</div></div></div>`;
+  return `<div class="card p-gen" style="margin-bottom:14px"><div class="card-h">⚡ Générer des leads automatiquement</div><div class="card-b">
+   ${R&&!R.running?`<div class="banner" style="background:#e8f6ec;border-color:#9bd3ab;color:#1f6b35;display:flex;gap:10px;align-items:center;flex-wrap:wrap">✅ ${R.added} lead${R.added>1?"s":""} ajouté${R.added>1?"s":""}${R.avecNum?` dont ${R.avecNum} avec numéro`:""}.${R.msg?" "+esc(R.msg):""} <button class="btn sm primary" data-v="p-appels">📞 Commencer les appels</button></div>`:""}
+   <form id="xgen" class="form" style="grid-template-columns:repeat(4,1fr)">
+    <div class="f"><label>Secteur</label><select name="secteur">${SECTEURS.map(x=>`<option ${G.secteur===x.k?"selected":""}>${esc(x.k)}</option>`).join("")}</select></div>
+    <div class="f"><label>Ville, code postal ou département</label><input name="lieu" required value="${esc(G.lieu)}" placeholder="Ex. Lyon"></div>
+    <div class="f"><label>Nombre de leads</label><select name="n">${[10,20,30,50].map(v=>`<option ${G.n===v?"selected":""}>${v}</option>`).join("")}</select></div>
+    <div class="f" style="justify-content:flex-end"><button class="btn primary">⚡ Générer</button></div>
+    <label class="f full small" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="onlyPhone" ${G.onlyPhone?"checked":""} ${k?"":"disabled"} style="width:auto"> Garder seulement les leads avec un numéro de téléphone${k?"":" (configure Google Maps ci-dessus pour l'activer)"}</label>
+   </form>
+   <div class="small muted" style="margin-top:6px">L'appli cherche dans l'annuaire officiel, écarte les entreprises fermées et celles déjà dans ta liste, récupère le gérant et l'adresse${k?", puis le numéro sur Google Maps":""}. Les leads arrivent dans « Mes prospects » et dans ta session d'appels.</div>
+  </div></div>`;
+}
+function bindGen(){
+  const f=$("#xgen");if(!f)return;
+  f.addEventListener("submit",e=>{e.preventDefault();G.secteur=f.secteur.value;G.lieu=f.lieu.value.trim();G.n=+f.n.value;G.onlyPhone=hasKey()&&f.onlyPhone.checked;generate()});
+}
+async function generate(){
+  if(!pdb||(G.run&&G.run.running))return;
+  const R=G.run={target:G.n,added:0,avecNum:0,vus:0,fermes:0,sansNum:0,deja:0,running:true,stop:false,etape:"Recherche de la ville…",msg:""};
+  const redraw=()=>{if(state.view==="p-recherche")rRecherche()};redraw();
+  const known=knownSirens();const k=hasKey();let gCalls=0;const maxG=G.n*5;
+  try{
+    const L=await resolveLieu(G.lieu);
+    let page=1,pages=1;
+    while(R.added<R.target&&page<=pages&&page<=40&&!R.stop){
+      R.etape="Lecture de l'annuaire, page "+page+"…";redraw();
+      const j=await fetchPage({secteur:G.secteur,cps:L.cps,tr:P.search.tr,page});
+      pages=j.total_pages||1;page++;
+      for(const e of (j.results||[])){
+        if(R.added>=R.target||R.stop)break;
+        const r=mapEnt(e);R.vus++;
+        if(r.ferme){R.fermes++;continue}
+        if(known.has(r.siren)){R.deja++;continue}
+        known.add(r.siren);
+        const p={...r,ferme:undefined,secteur:G.secteur,statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso(),origine:"Générateur de leads"};
+        if(k){
+          if(gCalls>=maxG){R.msg="Arrêt : limite de recherches Google atteinte pour cette génération (protection de ton quota).";R.stop=true;break}
+          R.etape="Recherche du numéro de "+r.societe+"…";redraw();
+          gCalls++;
+          let pl=null;try{pl=await lookupPlace(p)}catch(x){if(/Clé|refus|charger/.test(x.message||"")){R.msg=x.message;R.stop=true;break}}
+          applyPlace(p,pl);
+          if(p.fermeGoogle){R.fermes++;continue}
+          if(G.onlyPhone&&!p.tel){R.sansNum++;continue}
+          await sleep(150);
+        }
+        const ref=pdb.collection("prospects").doc();p.id=ref.id;prospects.set(ref.id,p);await saveP(p);
+        R.added++;if(p.tel)R.avecNum++;redraw();
+      }
+      await sleep(200);
+    }
+    if(!R.msg&&R.added<R.target&&!R.stop)R.msg="Plus d'entreprises disponibles dans cette zone : élargis la ville ou choisis un autre secteur.";
+    if(R.stop&&!R.msg)R.msg="Génération arrêtée.";
+  }catch(x){R.msg=netMsg(x)}
+  R.running=false;renderNav();redraw();
+  toast("⚡ "+R.added+" lead"+(R.added>1?"s":"")+" ajouté"+(R.added>1?"s":""));
 }
 
 /* ---------- toujours active ? (annuaire officiel) ---------- */
@@ -277,24 +348,31 @@ function loadGoogle(key){
   gLoad={key,p};p.catch(()=>{gLoad=null});return p;
 }
 function hasKey(){return !!(reg.google&&reg.google.key)}
+async function lookupPlace(p){
+  await loadGoogle(reg.google.key);
+  const {Place}=await google.maps.importLibrary("places");
+  const q=[p.enseigne||p.societe,p.adresse||[p.cp,p.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const {places}=await Place.searchByText({textQuery:q,fields:["displayName","nationalPhoneNumber","formattedAddress","websiteURI","googleMapsURI","rating","userRatingCount","businessStatus"],language:"fr",region:"fr",maxResultCount:1});
+  return(places&&places[0])||null;
+}
+function applyPlace(p,pl){
+  p.googleVerifie=today();
+  if(!pl){p.googleTrouve=false;return}
+  p.googleTrouve=true;
+  if(pl.nationalPhoneNumber&&!p.tel)p.tel=pl.nationalPhoneNumber;
+  if(safeUrl(pl.websiteURI))p.siteWeb=safeUrl(pl.websiteURI);
+  if(safeUrl(pl.googleMapsURI))p.googleMaps=safeUrl(pl.googleMapsURI);
+  if(pl.formattedAddress)p.adresseGoogle=pl.formattedAddress;
+  if(pl.displayName)p.nomGoogle=pl.displayName;
+  if(pl.rating)p.noteGoogle=pl.rating+" ★ ("+(pl.userRatingCount||0)+" avis)";
+  p.fermeGoogle=pl.businessStatus==="CLOSED_PERMANENTLY";p.fermeTempGoogle=pl.businessStatus==="CLOSED_TEMPORARILY";
+}
 async function enrich(p,silent){
   if(!hasKey())return false;
   try{
-    await loadGoogle(reg.google.key);
-    const {Place}=await google.maps.importLibrary("places");
-    const q=[p.enseigne||p.societe,p.adresse||[p.cp,p.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-    const {places}=await Place.searchByText({textQuery:q,fields:["displayName","nationalPhoneNumber","formattedAddress","websiteURI","googleMapsURI","rating","userRatingCount","businessStatus"],language:"fr",region:"fr",maxResultCount:1});
-    const pl=places&&places[0];
-    p.googleVerifie=today();
-    if(!pl){p.googleTrouve=false;await saveP(p);if(!silent)toast("Pas trouvé sur Google Maps : essaie « Trouver le numéro »");return false}
-    p.googleTrouve=true;
-    if(pl.nationalPhoneNumber&&!p.tel)p.tel=pl.nationalPhoneNumber;
-    if(safeUrl(pl.websiteURI))p.siteWeb=safeUrl(pl.websiteURI);
-    if(safeUrl(pl.googleMapsURI))p.googleMaps=safeUrl(pl.googleMapsURI);
-    if(pl.formattedAddress)p.adresseGoogle=pl.formattedAddress;
-    if(pl.displayName)p.nomGoogle=pl.displayName;
-    if(pl.rating)p.noteGoogle=pl.rating+" ★ ("+(pl.userRatingCount||0)+" avis)";
-    p.fermeGoogle=pl.businessStatus==="CLOSED_PERMANENTLY";p.fermeTempGoogle=pl.businessStatus==="CLOSED_TEMPORARILY";
+    const pl=await lookupPlace(p);
+    applyPlace(p,pl);
+    if(!pl){await saveP(p);if(!silent)toast("Pas trouvé sur Google Maps : essaie « Trouver le numéro »");return false}
     if(p.fermeGoogle)marquerFerme(p,"Google Maps");
     await saveP(p);
     if(p.fermeGoogle){if(!silent)toast("🚫 Fermé définitivement selon Google Maps : retiré de tes appels");return false}
@@ -542,10 +620,11 @@ function send(how){
 /* ---------- clics ---------- */
 document.addEventListener("click",e=>{
   if(e.target.closest('a[href^="tel:"],a[href^="sms:"],a[href^="mailto:"],a[target=_blank]'))return;
-  const t=e.target.closest("[data-xopen],[data-xadd],[data-xaddall],[data-xmore],[data-xfilter],[data-xsess],[data-xres],[data-xpanel],[data-xrappel],[data-xrdv],[data-xsavetel],[data-xunskip],[data-xconvert],[data-xclient],[data-xdel],[data-xmsg],[data-xtpl],[data-xsend],[data-xaddobj],[data-xdelobj],[data-xresetscripts],[data-xaddmsg],[data-xdelmsg],[data-xresetmsgs],.p-subnav [data-v],.empty [data-v],.banner [data-v],[data-xgkey],[data-xenrichall],[data-xenrich],[data-xsavemail],[data-xcheckall]");
+  const t=e.target.closest("[data-xopen],[data-xadd],[data-xaddall],[data-xmore],[data-xfilter],[data-xsess],[data-xres],[data-xpanel],[data-xrappel],[data-xrdv],[data-xsavetel],[data-xunskip],[data-xconvert],[data-xclient],[data-xdel],[data-xmsg],[data-xtpl],[data-xsend],[data-xaddobj],[data-xdelobj],[data-xresetscripts],[data-xaddmsg],[data-xdelmsg],[data-xresetmsgs],.p-subnav [data-v],.empty [data-v],.banner [data-v],[data-xgkey],[data-xenrichall],[data-xenrich],[data-xsavemail],[data-xcheckall],[data-xgenstop],.p-gen [data-v]");
   if(!t)return;
   const ds=t.dataset;
-  if(t.matches(".p-subnav [data-v],.empty [data-v],.banner [data-v]")){go(ds.v);return}
+  if(t.matches(".p-subnav [data-v],.empty [data-v],.banner [data-v],.p-gen [data-v]")){go(ds.v);return}
+  if(t.hasAttribute("data-xgenstop")){if(G.run)G.run.stop=true;t.disabled=true;t.textContent="Arrêt…";return}
   if(ds.xsavemail){const p=prospects.get(ds.xsavemail);const v=(($("#xMail")||{}).value||"").trim();if(p&&/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){p.email=v;saveP(p);toast("✓ Courriel enregistré");rAppels()}else toast("Courriel invalide");return}
   if(t.hasAttribute("data-xcheckall")){checkMany(plist().filter(aVerifier));return}
   if(t.hasAttribute("data-xgkey")){P.showKey=!P.showKey;render();return}
@@ -582,6 +661,9 @@ document.addEventListener("click",e=>{
 const css=document.createElement("style");
 css.textContent=`
 .p-head{margin-bottom:14px}
+.p-gen{border-top:4px solid #f0b400}
+.p-bar{height:10px;background:#eee;border-radius:999px;overflow:hidden}.p-bar div{height:100%;background:linear-gradient(90deg,#f0b400,#2e844a);transition:width .3s}
+@media (max-width:760px){#xgen.form{grid-template-columns:1fr!important}}
 .p-mail{background:#fff8ec;border:1px solid #f3d9a8;border-radius:10px;padding:10px 12px;color:#7a4300}
 .p-facts{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:13px;margin-bottom:14px;padding:12px;background:#fafafa;border-radius:10px}
 .p-facts b{display:block;font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.04em}
