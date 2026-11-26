@@ -72,7 +72,14 @@ claude.use("db").then(d=>{
   if(d.inbox){let first=true;const done=new Set();d.inbox.listen(async items=>{
     const known=knownSirens();let n=0;
     for(const it of items){if(done.has(it.id))continue;done.add(it.id);
-      if(it.siren&&known.has(String(it.siren))){d.inbox.remove(it.id);continue}
+      if(it.siren&&known.has(String(it.siren))){
+        // fiche déjà présente : on complète seulement ce qui manque (numéro, notes)
+        const ex=plist().find(x=>String(x.siren||"")===String(it.siren));
+        if(ex){let ch=false;
+          if(it.tel&&!ex.tel){ex.tel=String(it.tel).slice(0,40);ch=true;n++}
+          if(it.notes&&!(ex.notes||"").includes(it.notes)){ex.notes=((ex.notes?ex.notes+"\n":"")+String(it.notes)).slice(0,2000);ch=true}
+          if(ch)await saveP(ex);}
+        d.inbox.remove(it.id);continue}
       const ref=d.collection("prospects").doc();
       const keep=["societe","enseigne","raisonSociale","prenom","nom","fonction","dirigeants","adresse","cp","ville","siren","siret","naf","effectif","dateCreation","secteur","tel","siteWeb","notes"];
       const pr={statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso(),origine:it.origine||"Leads du matin",verifieLe:today()};
@@ -80,7 +87,7 @@ claude.use("db").then(d=>{
       pr.id=ref.id;prospects.set(ref.id,pr);await saveP(pr);known.add(String(it.siren||""));n++;
       d.inbox.remove(it.id);
     }
-    if(n){toast("📥 "+n+" nouveau"+(n>1?"x":"")+" lead"+(n>1?"s":"")+" du matin dans Mes prospects");renderNav();if(state.view.startsWith("p-"))render()}
+    if(n){toast("📥 "+n+" lead"+(n>1?"s":"")+" du matin ajouté"+(n>1?"s":"")+" ou complété"+(n>1?"s":"")+" dans Mes prospects");renderNav();if(state.view.startsWith("p-"))render()}
     first=false;
   })}
   d.collection("prospects").onSnapshot(s=>{

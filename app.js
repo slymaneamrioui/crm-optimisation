@@ -1,5 +1,5 @@
 /* ---------- configuration ---------- */
-const APP_VERSION="12 · 26 nov. 2026";
+const APP_VERSION="13 · 26 nov. 2026";
 const STATUTS=[
   {k:"À contacter",c:"#706e6b"},{k:"RDV pris",c:"#0176d3"},{k:"Découverte faite",c:"#06a59a"},
   {k:"Audit en cours",c:"#7f56d9"},{k:"Proposition envoyée",c:"#dd7a01"},{k:"Signé",c:"#2e844a"},{k:"Perdu",c:"#ba0517"}];
