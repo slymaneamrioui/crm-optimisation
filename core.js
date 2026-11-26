@@ -73,7 +73,13 @@
         if(ids.length&&s.size===0){ids.forEach(id=>F.setDoc(F.doc(col,id),L[id]).catch(()=>{}))}
         try{localStorage.setItem(flag,"1")}catch(e){}
       }
-      return{collection:(name)=>{const nm=name||"clients";const col=F.collection(fs,"users",uid,nm);return{
+      // boîte d'arrivée : leads déposés par le robot du matin pour ce compte (lecture et suppression seulement)
+      const inbox={
+        listen(cb){const em=(auth.currentUser&&auth.currentUser.email||"").toLowerCase();if(!em)return()=>{};
+          return F.onSnapshot(F.query(F.collection(fs,"arrivees"),F.where("pour","==",em)),s=>cb(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{})},
+        remove(id){return F.deleteDoc(F.doc(fs,"arrivees",id)).catch(()=>{})}
+      };
+      return{inbox,collection:(name)=>{const nm=name||"clients";const col=F.collection(fs,"users",uid,nm);return{
         onSnapshot(cb,err){
           return F.onSnapshot(col,s=>{
             if(nm==="clients"&&!s.metadata.fromCache)migrate(s);

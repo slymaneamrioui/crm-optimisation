@@ -68,6 +68,21 @@ const today=()=>todayStr();
 /* ---------- données ---------- */
 claude.use("db").then(d=>{
   if(!d)return;pdb=d;
+  // leads du matin : on les range dans « Mes prospects » puis on vide la boîte d'arrivée
+  if(d.inbox){let first=true;const done=new Set();d.inbox.listen(async items=>{
+    const known=knownSirens();let n=0;
+    for(const it of items){if(done.has(it.id))continue;done.add(it.id);
+      if(it.siren&&known.has(String(it.siren))){d.inbox.remove(it.id);continue}
+      const ref=d.collection("prospects").doc();
+      const keep=["societe","enseigne","raisonSociale","prenom","nom","fonction","dirigeants","adresse","cp","ville","siren","siret","naf","effectif","dateCreation","secteur","tel","siteWeb","notes"];
+      const pr={statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso(),origine:it.origine||"Leads du matin",verifieLe:today()};
+      keep.forEach(k=>{if(it[k]!=null&&it[k]!=="")pr[k]=String(it[k]).slice(0,500)});
+      pr.id=ref.id;prospects.set(ref.id,pr);await saveP(pr);known.add(String(it.siren||""));n++;
+      d.inbox.remove(it.id);
+    }
+    if(n){toast("📥 "+n+" nouveau"+(n>1?"x":"")+" lead"+(n>1?"s":"")+" du matin dans Mes prospects");renderNav();if(state.view.startsWith("p-"))render()}
+    first=false;
+  })}
   d.collection("prospects").onSnapshot(s=>{
     prospects=new Map(s.docs.map(x=>[x.id,{...JSON.parse(JSON.stringify(x.data()||{})),id:x.id}]));
     if(state.view.startsWith("p-"))softRender();else renderNav();
