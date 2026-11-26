@@ -16,15 +16,17 @@ ROBOT = "robot-leads@crm-optimisation-8d0cc.firebaseapp.com"
 REFERER = "https://slymaneamrioui.github.io/crm-optimisation/"
 FS = f"https://firestore.googleapis.com/v1/projects/{PROJET}/databases/(default)/documents"
 
-# commerces qui consomment beaucoup d'énergie (fours, froid, cuisson, lavage)
+# entreprises très consommatrices d'énergie (fours, froid, lavage, cuisson, machines), par ordre de priorité
 SECTEURS = {
-    "10.71C": "Boulangeries-pâtisseries", "10.71D": "Boulangeries-pâtisseries", "47.24Z": "Boulangeries-pâtisseries",
-    "10.13A": "Boucheries-charcuteries", "10.13B": "Boucheries-charcuteries", "47.22Z": "Boucheries-charcuteries",
-    "56.10A": "Restaurants", "56.10C": "Restaurants", "56.30Z": "Bars et cafés", "55.10Z": "Hôtels",
-    "47.11B": "Commerces alimentaires", "47.11C": "Commerces alimentaires", "47.11D": "Commerces alimentaires",
-    "47.21Z": "Commerces alimentaires", "47.29Z": "Commerces alimentaires", "10.51C": "Commerces alimentaires",
+    "10.71C": "Boulangeries-pâtisseries", "10.71D": "Boulangeries-pâtisseries", "10.71B": "Boulangeries-pâtisseries",
+    "10.13B": "Boucheries-charcuteries", "47.22Z": "Boucheries-charcuteries", "47.23Z": "Poissonneries",
     "96.01A": "Pressings et laveries", "96.01B": "Pressings et laveries",
+    "56.10A": "Restaurants", "56.21Z": "Traiteurs", "55.10Z": "Hôtels",
+    "47.11B": "Supérettes", "47.11C": "Supérettes", "47.11D": "Supérettes",
+    "56.10C": "Restauration rapide",
+    "16.23Z": "Menuiseries", "25.11Z": "Métallerie", "25.62B": "Usinage", "45.20A": "Carrosseries", "18.12Z": "Imprimeries",
 }
+PRIORITE = {naf: i for i, naf in enumerate(SECTEURS)}
 TRANCHES = "01,02,03,11"  # 1 à 19 salariés
 TR = {"01": "1 à 2 salariés", "02": "3 à 5 salariés", "03": "6 à 9 salariés", "11": "10 à 19 salariés"}
 
@@ -121,10 +123,10 @@ def main():
         elif st != 404:
             sys.exit(f"Lecture du registre refusée ({st}) : vérifie les règles Firestore")
 
-    choisis, ecartes = [], {}
+    candidats, ecartes = [], {}
     for cp in cps:
         page, pages = 1, 1
-        while page <= pages and len(choisis) < n:
+        while page <= pages:
             q = urllib.parse.urlencode({"code_postal": cp, "activite_principale": ",".join(SECTEURS),
                                         "tranche_effectif_salarie": TRANCHES, "etat_administratif": "A",
                                         "per_page": 25, "page": page})
@@ -134,17 +136,18 @@ def main():
             pages = j.get("total_pages") or 1
             page += 1
             for e in j.get("results", []):
-                if len(choisis) >= n:
-                    break
                 l, raison = lead(e, cp)
                 if not l:
                     ecartes[raison] = ecartes.get(raison, 0) + 1; continue
-                if l["siren"] in deja or any(c["siren"] == l["siren"] for c in choisis):
+                if l["siren"] in deja or any(c["siren"] == l["siren"] for c in candidats):
                     ecartes["déjà livrée"] = ecartes.get("déjà livrée", 0) + 1; continue
-                choisis.append(l)
+                l["_ordre"] = (PRIORITE.get(l["naf"], 99), cps.index(cp))
+                candidats.append(l)
             time.sleep(0.3)
-        if len(choisis) >= n:
-            break
+    candidats.sort(key=lambda c: c["_ordre"])
+    choisis = candidats[:n]
+    for c in candidats:
+        c.pop("_ordre", None)
 
     jour = time.strftime("%Y-%m-%d")
     if not essai:
