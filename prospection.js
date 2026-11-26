@@ -77,6 +77,7 @@ claude.use("db").then(d=>{
         const ex=plist().find(x=>String(x.siren||"")===String(it.siren));
         if(ex){let ch=false;
           if(it.tel&&!ex.tel){ex.tel=String(it.tel).slice(0,40);ch=true;n++}
+          if(it.siteWeb&&!ex.siteWeb&&safeUrl(it.siteWeb)){ex.siteWeb=safeUrl(it.siteWeb);ch=true;if(!it.tel)n++}
           if(it.notes&&!(ex.notes||"").includes(it.notes)){ex.notes=((ex.notes?ex.notes+"\n":"")+String(it.notes)).slice(0,2000);ch=true}
           if(ch)await saveP(ex);}
         d.inbox.remove(it.id);continue}
@@ -84,6 +85,7 @@ claude.use("db").then(d=>{
       const keep=["societe","enseigne","raisonSociale","prenom","nom","fonction","dirigeants","adresse","cp","ville","siren","siret","naf","effectif","dateCreation","secteur","tel","siteWeb","notes"];
       const pr={statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso(),origine:it.origine||"Leads du matin",verifieLe:today()};
       keep.forEach(k=>{if(it[k]!=null&&it[k]!=="")pr[k]=String(it[k]).slice(0,500)});
+      if(pr.siteWeb&&!safeUrl(pr.siteWeb))delete pr.siteWeb;
       pr.id=ref.id;prospects.set(ref.id,pr);await saveP(pr);known.add(String(it.siren||""));n++;
       d.inbox.remove(it.id);
     }
@@ -455,7 +457,7 @@ function rListe(){
    ${secs.length>1?`<select id="xSecF" style="margin-left:auto;padding:7px 10px;border:1px solid #d4d4d4;border-radius:8px"><option value="">Tous les secteurs</option>${secs.map(s=>`<option ${P.secFilter===s?"selected":""}>${esc(s)}</option>`).join("")}</select>`:""}</div>
   <div class="card">${L.length?L.map(p=>`<div class="list-row" data-xopen="${esc(p.id)}" style="flex-wrap:nowrap"><div class="avatar" style="background:${avatarColor(p.societe)}">${esc(initials(p.societe))}</div>
      <div class="grow"><div class="ellip" style="font-weight:600">${esc(p.societe||"Sans nom")}</div><div class="small muted ellip">${esc([[p.prenom,p.nom].filter(Boolean).join(" "),p.secteur,p.ville].filter(Boolean).join(" · "))}</div>
-     <div class="mrow-meta">${ppill(p.statut)}${p.prochainAppel&&A_APPELER.includes(p.statut)?relTag(p.prochainAppel):""}${p.nbAppels?`<span class="small muted">${p.nbAppels} appel${p.nbAppels>1?"s":""}</span>`:""}${p.email?"":`<span class="small" style="color:#9a5300">pas de courriel</span>`}</div></div>
+     <div class="mrow-meta">${ppill(p.statut)}${p.prochainAppel&&A_APPELER.includes(p.statut)?relTag(p.prochainAppel):""}${p.nbAppels?`<span class="small muted">${p.nbAppels} appel${p.nbAppels>1?"s":""}</span>`:""}${p.email?"":`<span class="small" style="color:#9a5300">pas de courriel</span>`}${p.siteWeb?`<span class="small">🌐 site</span>`:""}</div></div>
      ${p.tel?`<a class="qcall" href="${esc(telHref(p.tel))}" aria-label="Appeler">📞</a>`:`<span class="tag" style="background:#f1f1f1;color:#555">Pas de numéro</span>`}</div>`).join("")
    :`<div class="empty"><div class="big">📋</div>Aucun prospect ici.<br><button class="btn primary" data-v="p-recherche" style="margin-top:10px">🔍 Trouver des prospects</button></div>`}</div>`;
   const sf=$("#xSecF");if(sf)sf.onchange=()=>{P.secFilter=sf.value;rListe()};
