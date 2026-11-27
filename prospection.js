@@ -161,7 +161,7 @@ function knownSirens(){const s=new Set();plist().forEach(p=>p.siren&&s.add(p.sir
 function rRecherche(){
   const S=P.search,known=knownSirens();
   const fresh=S.results.filter(r=>!known.has(r.siren));
-  $("#main").innerHTML=head("Trouver des prospects","Annuaire officiel des entreprises françaises (SIRENE)")+googleCard()+genCard()+`
+  $("#main").innerHTML=head("Trouver des prospects","Annuaire officiel des entreprises françaises (SIRENE)")+zoneCard()+googleCard()+genCard()+`
   <div class="card" style="margin-bottom:14px"><div class="card-h">🔍 Recherche manuelle</div><div class="card-b">
    <form id="xSearch" class="form" style="grid-template-columns:repeat(3,1fr)">
     <div class="f"><label>Secteur</label><select name="secteur"><option value="">Tous secteurs (mot-clé)</option>${SECTEURS.map(x=>`<option ${S.secteur===x.k?"selected":""}>${esc(x.k)}</option>`).join("")}</select></div>
@@ -180,7 +180,7 @@ function rRecherche(){
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${known.has(r.siren)?`<span class="tag soon">Déjà dans ta liste</span>`:`<button class="btn sm primary" data-xadd="${esc(r.siren)}">+ Ajouter</button>`}</div></div>`).join("")}
     ${S.page<S.pages?`<div style="padding:12px;text-align:center"><button class="btn" data-xmore ${S.loading?"disabled":""}>${S.loading?"Chargement…":"Voir plus de résultats"}</button></div>`:""}
   </div>`:!S.loading&&!S.err?`<div class="card"><div class="empty"><div class="big">🎯</div>Choisis un secteur et une ville, puis lance la recherche.<br><span class="small">Les entreprises ajoutées vont dans « Mes prospects », pas dans tes clients.</span></div></div>`:""}`;
-  bindGoogleForm();bindGen();
+  bindGoogleForm();bindGen();bindZone();
   const f=$("#xSearch");
   f.querySelectorAll(".p-checks label").forEach(l=>l.addEventListener("click",e=>{e.preventDefault();const cb=l.querySelector("input");cb.checked=!cb.checked;l.classList.toggle("on",cb.checked)}));
   f.addEventListener("submit",e=>{e.preventDefault();S.secteur=f.secteur.value;S.lieu=f.lieu.value.trim();S.q=f.q.value.trim();S.tr=[...f.querySelectorAll("input[name=tr]:checked")].map(x=>x.value);if(!S.tr.length)S.tr=TRANCHES.map(t=>t[0]);search(false)});
@@ -246,7 +246,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const netMsg=e=>(e&&e.message&&!/fetch|network/i.test(e.message))?e.message:"Recherche impossible : vérifie ta connexion internet.";
 async function search(more){
   const S=P.search;
-  if(!more){S.page=0;S.pages=0;S.total=0;S.results=[];S.cps=null;S.villeLabel="";S.fermes=0;S.opposees=0}
+  if(!more){S.mode="";S.page=0;S.pages=0;S.total=0;S.results=[];S.cps=null;S.villeLabel="";S.fermes=0;S.opposees=0}
   S.loading=true;S.err="";rRecherche();
   try{
     if(!more){const L=await resolveLieu(S.lieu);S.cps=L.cps;S.villeLabel=L.label}
@@ -265,6 +265,111 @@ async function addProspect(r){
   const p={...r,ferme:undefined,opposition:undefined,id:ref.id,secteur:P.search.secteur||"",statut:"Nouveau",tel:"",email:"",notes:"",nbAppels:0,historique:[],createdAt:iso()};
   prospects.set(ref.id,p);await saveP(p);
   return ref.id;
+}
+
+/* ---------- carte : entourer une zone ---------- */
+const Z={secteur:"",pts:[],drawing:false,running:false,stop:false,msg:"",center:null,zoom:null,me:null};
+let lfLoad=null,zMap=null;
+function loadLeaflet(){
+  if(window.L)return Promise.resolve();
+  if(lfLoad)return lfLoad;
+  lfLoad=new Promise((res,rej)=>{
+    const l=document.createElement("link");l.rel="stylesheet";l.href="vendor/leaflet/leaflet.css";document.head.appendChild(l);
+    const s=document.createElement("script");s.src="vendor/leaflet/leaflet.js";s.onload=res;s.onerror=()=>{lfLoad=null;rej(new Error("La carte n'a pas pu se charger. Vérifie ta connexion."))};document.head.appendChild(s);
+  });
+  return lfLoad;
+}
+function zoneCard(){
+  const ok=Z.pts.length>2;
+  return `<div class="card" style="margin-bottom:14px"><div class="card-h">🗺️ Entoure une zone sur la carte</div><div class="card-b">
+   <div class="form" style="grid-template-columns:1fr;margin-bottom:10px"><div class="f"><label>Secteur</label><select id="zSec"><option value="">Toutes les entreprises</option>${SECTEURS.map(x=>`<option ${Z.secteur===x.k?"selected":""}>${esc(x.k)}</option>`).join("")}</select></div></div>
+   <div id="zMap" class="p-map${Z.drawing?" drawing":""}"></div>
+   <div class="p-map-bar">
+    <button type="button" class="btn" id="zMe">📍 Où je suis</button>
+    <button type="button" class="btn ${Z.drawing?"primary":""}" id="zDraw" ${Z.running?"disabled":""}>✏️ ${Z.drawing?"Trace la zone avec ton doigt…":"Dessiner la zone"}</button>
+    ${ok&&!Z.running?`<button type="button" class="btn" id="zClear">Effacer</button>`:""}
+    ${Z.running?`<button type="button" class="btn ml-auto" id="zStop">Arrêter</button>`:`<button type="button" class="btn primary ml-auto" id="zGo" ${ok?"":"disabled"}>🔍 Chercher dans la zone</button>`}
+   </div>
+   <div class="small muted" id="zMsg" style="margin-top:8px">${esc(Z.msg||"Clique « Dessiner la zone », puis entoure le secteur d'un trait continu sur la carte.")}</div>
+  </div></div>`;
+}
+function bindZone(){
+  const el=$("#zMap");if(!el)return;
+  $("#zSec").addEventListener("change",e=>{Z.secteur=e.target.value});
+  $("#zDraw").addEventListener("click",()=>{Z.drawing=!Z.drawing;Z.msg=Z.drawing?"Entoure la zone d'un seul trait, sans lever le doigt.":"";rRecherche()});
+  $("#zMe").addEventListener("click",()=>{
+    if(!navigator.geolocation){toast("Localisation non disponible");return}
+    Z.msg="Localisation en cours…";$("#zMsg").textContent=Z.msg;
+    navigator.geolocation.getCurrentPosition(p=>{Z.me=[p.coords.latitude,p.coords.longitude];Z.center=Z.me;Z.zoom=14;Z.msg="Tu es ici (point rouge). Dessine ta zone autour.";rRecherche()},
+      ()=>{Z.msg="Localisation refusée : autorise-la dans ton navigateur, ou déplace la carte toi-même.";rRecherche()},{enableHighAccuracy:true,timeout:10000});
+  });
+  const c=$("#zClear");if(c)c.addEventListener("click",()=>{Z.pts=[];Z.msg="";if(P.search.mode==="zone"){P.search.results=[];P.search.total=0}rRecherche()});
+  const g=$("#zGo");if(g)g.addEventListener("click",zoneSearch);
+  const s=$("#zStop");if(s)s.addEventListener("click",()=>{Z.stop=true;s.disabled=true;s.textContent="Arrêt…"});
+  loadLeaflet().then(()=>initZoneMap(el)).catch(e=>{el.innerHTML=`<div class="empty">${esc(e.message)}</div>`});
+}
+function initZoneMap(el){
+  if(!document.body.contains(el))return;
+  if(zMap){try{zMap.remove()}catch(e){}zMap=null}
+  const m=L.map(el).setView(Z.center||[44.4986,0.9655],Z.zoom||12);zMap=m;
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(m);
+  m.on("moveend",()=>{const c=m.getCenter();Z.center=[c.lat,c.lng];Z.zoom=m.getZoom()});
+  let poly=Z.pts.length>2?L.polygon(Z.pts,{color:"#5b3fd6",weight:3,fillOpacity:.12}).addTo(m):null;
+  if(P.search.mode==="zone")P.search.results.forEach(r=>{if(r.lat!=null)L.circleMarker([r.lat,r.lng],{radius:5,color:"#0b6bcb",weight:2,fillOpacity:.8}).bindTooltip(r.societe).addTo(m)});
+  if(Z.me)L.circleMarker(Z.me,{radius:8,color:"#fff",weight:3,fillColor:"#d93025",fillOpacity:1}).addTo(m);
+  if(!Z.drawing)return;
+  ["dragging","touchZoom","doubleClickZoom","boxZoom","scrollWheelZoom"].forEach(k=>m[k]&&m[k].disable());
+  let line=null,on=false;
+  const ll=e=>{const p=m.mouseEventToLatLng(e);return[p.lat,p.lng]};
+  el.addEventListener("pointerdown",e=>{e.preventDefault();e.stopPropagation();on=true;try{el.setPointerCapture(e.pointerId)}catch(x){}Z.pts=[ll(e)];if(poly){poly.remove();poly=null}line=L.polyline(Z.pts,{color:"#5b3fd6",weight:3}).addTo(m)},true);
+  el.addEventListener("pointermove",e=>{if(!on)return;e.preventDefault();Z.pts.push(ll(e));line.setLatLngs(Z.pts)},true);
+  const end=()=>{if(!on)return;on=false;if(line)line.remove();
+    const pts=Z.pts,step=Math.max(1,Math.ceil(pts.length/150));Z.pts=pts.filter((p,i)=>i%step===0);
+    Z.drawing=false;
+    if(Z.pts.length<3){Z.pts=[];Z.msg="Trait trop court : entoure la zone d'un seul trait continu."}else Z.msg="Zone prête. Choisis un secteur si tu veux, puis clique « Chercher dans la zone ».";
+    if(P.search.mode==="zone"){P.search.results=[];P.search.total=0}
+    rRecherche()};
+  el.addEventListener("pointerup",end,true);el.addEventListener("pointercancel",end,true);
+}
+function inPoly(pt,poly){let ins=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const[yi,xi]=poly[i],[yj,xj]=poly[j];if(((yi>pt[0])!==(yj>pt[0]))&&(pt[1]<(xj-xi)*(pt[0]-yi)/(yj-yi)+xi))ins=!ins}return ins}
+function kmDist(a,b){const R=6371,r=Math.PI/180,dLa=(b[0]-a[0])*r,dLo=(b[1]-a[1])*r;const h=Math.sin(dLa/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+async function zoneSearch(){
+  const S=P.search,poly=Z.pts;if(poly.length<3||Z.running)return;
+  const c=[poly.reduce((a,p)=>a+p[0],0)/poly.length,poly.reduce((a,p)=>a+p[1],0)/poly.length];
+  const rad=Math.max(...poly.map(p=>kmDist(c,p)));
+  if(rad>50){Z.msg="Zone trop grande : dessine une zone de moins de 100 km de large.";rRecherche();return}
+  const sec=SEC(Z.secteur),MAXP=40;
+  Object.assign(S,{mode:"zone",secteur:Z.secteur,results:[],page:0,pages:0,total:0,err:"",villeLabel:"zone dessinée",fermes:0,opposees:0,cps:null});
+  Z.running=true;Z.stop=false;Z.msg="Recherche dans la zone…";rRecherche();
+  const seen=new Set();let page=1,pages=1,vus=0;
+  try{
+    while(page<=pages&&page<=MAXP&&!Z.stop){
+      const u=new URL("https://recherche-entreprises.api.gouv.fr/near_point");
+      u.searchParams.set("lat",c[0].toFixed(5));u.searchParams.set("long",c[1].toFixed(5));u.searchParams.set("radius",Math.max(.5,rad).toFixed(1));
+      if(sec)u.searchParams.set("activite_principale",sec.naf.join(","));
+      u.searchParams.set("per_page","25");u.searchParams.set("page",String(page));
+      let r;for(let essai=0;essai<4;essai++){r=await fetch(u);if(r.status!==429)break;await sleep(1500*(essai+1))}
+      if(!r.ok)throw new Error(r.status===429?"Trop de recherches d'un coup : attends quelques secondes et réessaie.":"La recherche a échoué (erreur "+r.status+").");
+      const j=await r.json();pages=j.total_pages||0;
+      (j.results||[]).forEach(e=>{
+        vus++;if(!e||seen.has(e.siren))return;
+        const ets=(e.matching_etablissements||[]).filter(x=>x&&x.latitude!=null&&x.longitude!=null);
+        const et=ets.find(x=>x.etat_administratif!=="F"&&inPoly([+x.latitude,+x.longitude],poly));
+        if(!et)return;
+        seen.add(e.siren);
+        const m=mapEnt({...e,matching_etablissements:[et]});
+        if(m.ferme){S.fermes++;return}
+        if(m.opposition){S.opposees++;return}
+        m.lat=+et.latitude;m.lng=+et.longitude;S.results.push(m);
+      });
+      S.total=S.results.length;
+      const z=$("#zMsg");if(z)z.textContent=`Recherche… ${S.results.length} entreprise${S.results.length>1?"s":""} trouvée${S.results.length>1?"s":""} dans ta zone (page ${page}/${Math.min(pages,MAXP)})`;
+      page++;await sleep(250);
+    }
+    Z.msg=S.results.length?`${S.results.length} entreprise${S.results.length>1?"s":""} dans ta zone${page<=pages&&!Z.stop?" (les 1 000 plus proches du centre examinées : resserre la zone ou choisis un secteur pour aller plus loin)":""}.`:"Aucune entreprise trouvée dans cette zone. Agrandis-la ou change de secteur.";
+    if(Z.stop)Z.msg="Recherche arrêtée. "+S.results.length+" entreprise(s) trouvée(s).";
+  }catch(e){S.err=netMsg(e);Z.msg=""}
+  Z.running=false;if(state.view==="p-recherche")rRecherche();
 }
 
 /* ---------- générateur de leads ---------- */
