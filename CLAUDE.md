@@ -8,6 +8,7 @@ Application web statique (GitHub Pages) installable sur téléphone, en françai
 - `core.js` : stockage (Firebase Auth + Firestore, ou stockage local si pas de config) et écran de connexion.
 - `app.js` : espace **CRM clients** (accueil, clients, pipeline, relances, fins de contrat, sauvegarde).
 - `prospection.js` : espace **Prospection**, séparé du CRM (recherche SIRENE, mes prospects, session d'appels, scripts, modèles de messages, Google Maps).
+- `linkeo/` : appli séparée **Prospection Linkeo Québec** (app.js, core.js, sw.js propres ; réutilise `../config.js`). Données dans `users/{uid}/linkeo_leads` (stockage local si la règle Firestore manque) et `users/{uid}/reglages/linkeo-cadeaux`. Incrémenter `CACHE` dans `linkeo/sw.js` à chaque mise en ligne.
 - `sw.js` : service worker (incrémenter `CACHE` et `APP_VERSION` dans `app.js` à chaque mise en ligne).
 
 ## Données (Firestore)
