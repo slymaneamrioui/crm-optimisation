@@ -140,7 +140,7 @@ function fill(tpl,o){
 }
 
 /* ---------- rendu ---------- */
-const SUBS=[["p-recherche","🔍 Trouver"],["p-liste","📋 Mes prospects"],["p-appels","📞 Appels"],["p-scripts","💬 Scripts"],["p-messages","✉️ Messages"]];
+const SUBS=[["p-recherche","🔍 Trouver"],["p-liste","📋 Mes prospects"],["p-carte","🗺️ Carte"],["p-appels","📞 Appels"],["p-scripts","💬 Scripts"],["p-messages","✉️ Messages"]];
 function head(title,sub){
   return `<div class="p-head"><div class="p-eyebrow">Prospection</div><div class="page-h" style="margin-bottom:10px"><h1>${title}</h1>${sub?`<span class="sub">${sub}</span>`:""}</div>
   <div class="p-subnav">${SUBS.map(([v,l])=>`<button data-v="${v}" class="${state.view===v?"on":""}">${l}${v==="p-liste"&&aAppelerCount()?` <span class="p-badge">${aAppelerCount()}</span>`:""}</button>`).join("")}</div></div>`;
@@ -150,6 +150,7 @@ function gLink(o,label){const q=encodeURIComponent([o.societe,o.ville,"télépho
 
 window.renderProspection=function(v){
   if(v==="p-recherche")return rRecherche();
+  if(v==="p-carte")return rCarte();
   if(v==="p-liste")return rListe();
   if(v==="p-appels")return rAppels();
   if(v==="p-scripts")return rScripts();
@@ -161,7 +162,7 @@ function knownSirens(){const s=new Set();plist().forEach(p=>p.siren&&s.add(p.sir
 function rRecherche(){
   const S=P.search,known=knownSirens();
   const fresh=S.results.filter(r=>!known.has(r.siren));
-  $("#main").innerHTML=head("Trouver des prospects","Annuaire officiel des entreprises françaises (SIRENE)")+zoneCard()+googleCard()+genCard()+`
+  $("#main").innerHTML=head("Trouver des prospects","Annuaire officiel des entreprises françaises (SIRENE)")+googleCard()+genCard()+`
   <div class="card" style="margin-bottom:14px"><div class="card-h">🔍 Recherche manuelle</div><div class="card-b">
    <form id="xSearch" class="form" style="grid-template-columns:repeat(3,1fr)">
     <div class="f"><label>Secteur</label><select name="secteur"><option value="">Tous secteurs (mot-clé)</option>${SECTEURS.map(x=>`<option ${S.secteur===x.k?"selected":""}>${esc(x.k)}</option>`).join("")}</select></div>
@@ -180,7 +181,7 @@ function rRecherche(){
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${known.has(r.siren)?`<span class="tag soon">Déjà dans ta liste</span>`:`<button class="btn sm primary" data-xadd="${esc(r.siren)}">+ Ajouter</button>`}</div></div>`).join("")}
     ${S.page<S.pages?`<div style="padding:12px;text-align:center"><button class="btn" data-xmore ${S.loading?"disabled":""}>${S.loading?"Chargement…":"Voir plus de résultats"}</button></div>`:""}
   </div>`:!S.loading&&!S.err?`<div class="card"><div class="empty"><div class="big">🎯</div>Choisis un secteur et une ville, puis lance la recherche.<br><span class="small">Les entreprises ajoutées vont dans « Mes prospects », pas dans tes clients.</span></div></div>`:""}`;
-  bindGoogleForm();bindGen();bindZone();
+  bindGoogleForm();bindGen();
   const f=$("#xSearch");
   f.querySelectorAll(".p-checks label").forEach(l=>l.addEventListener("click",e=>{e.preventDefault();const cb=l.querySelector("input");cb.checked=!cb.checked;l.classList.toggle("on",cb.checked)}));
   f.addEventListener("submit",e=>{e.preventDefault();S.secteur=f.secteur.value;S.lieu=f.lieu.value.trim();S.q=f.q.value.trim();S.tr=[...f.querySelectorAll("input[name=tr]:checked")].map(x=>x.value);if(!S.tr.length)S.tr=TRANCHES.map(t=>t[0]);search(false)});
@@ -246,7 +247,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const netMsg=e=>(e&&e.message&&!/fetch|network/i.test(e.message))?e.message:"Recherche impossible : vérifie ta connexion internet.";
 async function search(more){
   const S=P.search;
-  if(!more){S.mode="";S.page=0;S.pages=0;S.total=0;S.results=[];S.cps=null;S.villeLabel="";S.fermes=0;S.opposees=0}
+  if(!more){S.page=0;S.pages=0;S.total=0;S.results=[];S.cps=null;S.villeLabel="";S.fermes=0;S.opposees=0}
   S.loading=true;S.err="";rRecherche();
   try{
     if(!more){const L=await resolveLieu(S.lieu);S.cps=L.cps;S.villeLabel=L.label}
@@ -267,9 +268,12 @@ async function addProspect(r){
   return ref.id;
 }
 
-/* ---------- carte : entourer une zone ---------- */
-const Z={secteur:"",pts:[],drawing:false,running:false,stop:false,msg:"",center:null,zoom:null,me:null};
-let lfLoad=null,zMap=null;
+/* ---------- carte : mes prospects et clients dans une zone ---------- */
+const Z={pts:[],drawing:false,msg:"",center:null,zoom:null,me:null,geo:{running:false,done:0,todo:0}};
+let lfLoad=null,zMap=null,zLayer=null;
+const GEO_KEY="crm-geo-cache-v1";
+let geoCache={};try{geoCache=JSON.parse(localStorage.getItem(GEO_KEY)||"{}")||{}}catch(e){geoCache={}}
+function saveGeo(){try{localStorage.setItem(GEO_KEY,JSON.stringify(geoCache))}catch(e){}}
 function loadLeaflet(){
   if(window.L)return Promise.resolve();
   if(lfLoad)return lfLoad;
@@ -279,44 +283,101 @@ function loadLeaflet(){
   });
   return lfLoad;
 }
-function zoneCard(){
+/* une adresse lisible pour le géocodage */
+function geoAddr(r){
+  const a=String(r.adresse||"").trim(),cp=String(r.cp||"").trim(),v=String(r.ville||"").trim();
+  if(!a&&!cp&&!v)return"";
+  if(a&&cp&&a.includes(cp))return a;
+  return [a,cp,v].filter(Boolean).join(" ");
+}
+/* toutes mes fiches : prospects + clients */
+function fiches(){
+  const out=[];
+  plist().forEach(p=>out.push({type:"p",id:p.id,societe:p.societe||"Sans nom",contact:[p.prenom,p.nom].filter(Boolean).join(" "),statut:p.statut||"Nouveau",tel:p.tel||"",addr:geoAddr(p),ville:p.ville||""}));
+  list().forEach(c=>out.push({type:"c",id:c.id,societe:c.societe||"Sans nom",contact:[c.prenom,c.nom].filter(Boolean).join(" "),statut:c.statut||"À contacter",tel:c.tel||"",addr:geoAddr(c),ville:c.ville||""}));
+  out.forEach(f=>{const g=f.addr&&geoCache[f.addr];f.pos=g&&g.length===2?g:null});
+  return out;
+}
+async function geocodeMissing(){
+  if(Z.geo.running)return;
+  const todo=[...new Set(fiches().filter(f=>f.addr&&!(f.addr in geoCache)).map(f=>f.addr))];
+  if(!todo.length)return;
+  Z.geo={running:true,done:0,todo:todo.length};
+  for(const a of todo){
+    try{
+      const r=await fetch("https://data.geopf.fr/geocodage/search?limit=1&q="+encodeURIComponent(a));
+      if(r.ok){const j=await r.json();const f=j.features&&j.features[0];
+        geoCache[a]=f&&f.properties&&f.properties.score>0.4?[f.geometry.coordinates[1],f.geometry.coordinates[0]]:0}
+    }catch(e){}
+    Z.geo.done++;
+    if(Z.geo.done%5===0){saveGeo();drawMarkers();const m=$("#zMsg");if(m)m.textContent=`Placement de tes fiches sur la carte… ${Z.geo.done}/${Z.geo.todo}`}
+    await sleep(80);
+  }
+  saveGeo();Z.geo.running=false;if(state.view==="p-carte")rCarte();
+}
+function dansZone(){return Z.pts.length>2?fiches().filter(f=>f.pos&&inPoly(f.pos,Z.pts)):[]}
+function rCarte(){
+  const all=fiches(),placed=all.filter(f=>f.pos),sansAdr=all.filter(f=>!f.addr).length,introuv=all.filter(f=>f.addr&&geoCache[f.addr]===0).length;
+  let inz=dansZone();
+  if(Z.me)inz.forEach(f=>f.dist=kmDist(Z.me,f.pos));
+  inz.sort((a,b)=>Z.me?a.dist-b.dist:a.societe.localeCompare(b.societe,"fr"));
   const ok=Z.pts.length>2;
-  return `<div class="card" style="margin-bottom:14px"><div class="card-h">🗺️ Entoure une zone sur la carte</div><div class="card-b">
-   <div class="form" style="grid-template-columns:1fr;margin-bottom:10px"><div class="f"><label>Secteur</label><select id="zSec"><option value="">Toutes les entreprises</option>${SECTEURS.map(x=>`<option ${Z.secteur===x.k?"selected":""}>${esc(x.k)}</option>`).join("")}</select></div></div>
+  const msg=Z.msg||(Z.geo.running?`Placement de tes fiches sur la carte… ${Z.geo.done}/${Z.geo.todo}`:ok?"":"Clique « Dessiner la zone », puis entoure le secteur où tu es d'un seul trait.");
+  $("#main").innerHTML=head("Carte","Tes prospects et clients autour de toi")+`
+  <div class="card" style="margin-bottom:14px"><div class="card-b">
+   <div class="small" style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px"><span><span class="p-dot" style="background:#1f9d55"></span> Clients</span><span><span class="p-dot" style="background:#0b6bcb"></span> Prospects</span><span class="muted">${placed.length} fiche${placed.length>1?"s":""} sur la carte${sansAdr?` · ${sansAdr} sans adresse`:""}${introuv?` · ${introuv} adresse${introuv>1?"s":""} introuvable${introuv>1?"s":""}`:""}</span></div>
    <div id="zMap" class="p-map${Z.drawing?" drawing":""}"></div>
    <div class="p-map-bar">
     <button type="button" class="btn" id="zMe">📍 Où je suis</button>
-    <button type="button" class="btn ${Z.drawing?"primary":""}" id="zDraw" ${Z.running?"disabled":""}>✏️ ${Z.drawing?"Trace la zone avec ton doigt…":"Dessiner la zone"}</button>
-    ${ok&&!Z.running?`<button type="button" class="btn" id="zClear">Effacer</button>`:""}
-    ${Z.running?`<button type="button" class="btn ml-auto" id="zStop">Arrêter</button>`:`<button type="button" class="btn primary ml-auto" id="zGo" ${ok?"":"disabled"}>🔍 Chercher dans la zone</button>`}
+    <button type="button" class="btn ${Z.drawing?"primary":""}" id="zDraw">✏️ ${Z.drawing?"Trace la zone avec ton doigt…":"Dessiner la zone"}</button>
+    ${ok?`<button type="button" class="btn" id="zClear">Effacer la zone</button>`:""}
    </div>
-   <div class="small muted" id="zMsg" style="margin-top:8px">${esc(Z.msg||"Clique « Dessiner la zone », puis entoure le secteur d'un trait continu sur la carte.")}</div>
-  </div></div>`;
+   <div class="small muted" id="zMsg" style="margin-top:8px">${esc(msg)}</div>
+  </div></div>
+  ${ok?`<div class="card"><div class="card-h">${inz.length} fiche${inz.length>1?"s":""} dans ta zone</div>
+   ${inz.length?inz.map(f=>`<div class="list-row" ${f.type==="p"?`data-xopen="${esc(f.id)}"`:`data-open="${esc(f.id)}"`} style="flex-wrap:nowrap">
+     <div class="avatar" style="background:${f.type==="c"?"#1f9d55":"#0b6bcb"}">${esc(initials(f.societe))}</div>
+     <div class="grow"><div class="ellip" style="font-weight:600">${esc(f.societe)}</div>
+      <div class="small ellip">${f.contact?"👤 "+esc(f.contact):'<span class="muted">👤 Contact inconnu</span>'}</div>
+      <div class="small muted ellip">${esc(f.addr)}${f.dist!=null?` · ${f.dist<1?Math.round(f.dist*1000)+" m":f.dist.toFixed(1).replace(".",",")+" km"}`:""}</div>
+      <div class="mrow-meta"><span class="tag" style="background:${f.type==="c"?"#e8f6ec;color:#1f6b35":"#e7f0fb;color:#0b4f96"}">${f.type==="c"?"Client":"Prospect"}</span>${f.type==="p"?ppill(f.statut):pill(f.statut)}</div></div>
+     <div style="display:flex;gap:6px;align-items:center">${f.tel?`<a class="qcall" href="tel:${esc(String(f.tel).replace(/\s/g,""))}" title="Appeler">📞</a>`:""}<a class="btn sm" href="https://www.google.com/maps/dir/?api=1&destination=${f.pos[0]},${f.pos[1]}" target="_blank" rel="noopener" title="Itinéraire">🚗</a></div></div>`).join("")
+   :`<div class="empty">Aucun prospect ni client dans cette zone.</div>`}</div>`:""}`;
+  bindCarte();
 }
-function bindZone(){
+function bindCarte(){
   const el=$("#zMap");if(!el)return;
-  $("#zSec").addEventListener("change",e=>{Z.secteur=e.target.value});
-  $("#zDraw").addEventListener("click",()=>{Z.drawing=!Z.drawing;Z.msg=Z.drawing?"Entoure la zone d'un seul trait, sans lever le doigt.":"";rRecherche()});
+  $("#zDraw").addEventListener("click",()=>{Z.drawing=!Z.drawing;Z.msg=Z.drawing?"Entoure la zone d'un seul trait, sans lever le doigt.":"";rCarte()});
   $("#zMe").addEventListener("click",()=>{
     if(!navigator.geolocation){toast("Localisation non disponible");return}
-    Z.msg="Localisation en cours…";$("#zMsg").textContent=Z.msg;
-    navigator.geolocation.getCurrentPosition(p=>{Z.me=[p.coords.latitude,p.coords.longitude];Z.center=Z.me;Z.zoom=14;Z.msg="Tu es ici (point rouge). Dessine ta zone autour.";rRecherche()},
-      ()=>{Z.msg="Localisation refusée : autorise-la dans ton navigateur, ou déplace la carte toi-même.";rRecherche()},{enableHighAccuracy:true,timeout:10000});
+    $("#zMsg").textContent="Localisation en cours…";
+    navigator.geolocation.getCurrentPosition(p=>{Z.me=[p.coords.latitude,p.coords.longitude];Z.center=Z.me;Z.zoom=13;Z.msg="Tu es ici (point rouge). Entoure ta zone autour.";rCarte()},
+      ()=>{Z.msg="Localisation refusée : autorise-la dans ton navigateur, ou déplace la carte toi-même.";rCarte()},{enableHighAccuracy:true,timeout:10000});
   });
-  const c=$("#zClear");if(c)c.addEventListener("click",()=>{Z.pts=[];Z.msg="";if(P.search.mode==="zone"){P.search.results=[];P.search.total=0}rRecherche()});
-  const g=$("#zGo");if(g)g.addEventListener("click",zoneSearch);
-  const s=$("#zStop");if(s)s.addEventListener("click",()=>{Z.stop=true;s.disabled=true;s.textContent="Arrêt…"});
+  const c=$("#zClear");if(c)c.addEventListener("click",()=>{Z.pts=[];Z.msg="";rCarte()});
   loadLeaflet().then(()=>initZoneMap(el)).catch(e=>{el.innerHTML=`<div class="empty">${esc(e.message)}</div>`});
+  geocodeMissing();
+}
+function drawMarkers(){
+  if(!zMap||!window.L)return;
+  if(zLayer)zLayer.remove();zLayer=L.layerGroup().addTo(zMap);
+  fiches().filter(f=>f.pos).forEach(f=>{
+    L.circleMarker(f.pos,{radius:7,color:"#fff",weight:2,fillColor:f.type==="c"?"#1f9d55":"#0b6bcb",fillOpacity:1})
+     .bindTooltip(f.societe+(f.contact?" · "+f.contact:""))
+     .on("click",()=>{if(Z.drawing)return;f.type==="p"?openProspect(f.id):openRec(f.id)}).addTo(zLayer);
+  });
+  if(Z.me)L.circleMarker(Z.me,{radius:8,color:"#fff",weight:3,fillColor:"#d93025",fillOpacity:1}).addTo(zLayer);
 }
 function initZoneMap(el){
   if(!document.body.contains(el))return;
-  if(zMap){try{zMap.remove()}catch(e){}zMap=null}
-  const m=L.map(el).setView(Z.center||[44.4986,0.9655],Z.zoom||12);zMap=m;
+  if(zMap){try{zMap.remove()}catch(e){}zMap=null;zLayer=null}
+  const m=L.map(el);zMap=m;
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(m);
+  const pts=fiches().filter(f=>f.pos).map(f=>f.pos);
+  if(Z.center)m.setView(Z.center,Z.zoom||13);else if(pts.length)m.fitBounds(pts,{padding:[30,30],maxZoom:14});else m.setView([44.4986,0.9655],12);
   m.on("moveend",()=>{const c=m.getCenter();Z.center=[c.lat,c.lng];Z.zoom=m.getZoom()});
-  let poly=Z.pts.length>2?L.polygon(Z.pts,{color:"#5b3fd6",weight:3,fillOpacity:.12}).addTo(m):null;
-  if(P.search.mode==="zone")P.search.results.forEach(r=>{if(r.lat!=null)L.circleMarker([r.lat,r.lng],{radius:5,color:"#0b6bcb",weight:2,fillOpacity:.8}).bindTooltip(r.societe).addTo(m)});
-  if(Z.me)L.circleMarker(Z.me,{radius:8,color:"#fff",weight:3,fillColor:"#d93025",fillOpacity:1}).addTo(m);
+  let poly=Z.pts.length>2?L.polygon(Z.pts,{color:"#5b3fd6",weight:3,fillOpacity:.1}).addTo(m):null;
+  drawMarkers();
   if(!Z.drawing)return;
   ["dragging","touchZoom","doubleClickZoom","boxZoom","scrollWheelZoom"].forEach(k=>m[k]&&m[k].disable());
   let line=null,on=false;
@@ -324,53 +385,14 @@ function initZoneMap(el){
   el.addEventListener("pointerdown",e=>{e.preventDefault();e.stopPropagation();on=true;try{el.setPointerCapture(e.pointerId)}catch(x){}Z.pts=[ll(e)];if(poly){poly.remove();poly=null}line=L.polyline(Z.pts,{color:"#5b3fd6",weight:3}).addTo(m)},true);
   el.addEventListener("pointermove",e=>{if(!on)return;e.preventDefault();Z.pts.push(ll(e));line.setLatLngs(Z.pts)},true);
   const end=()=>{if(!on)return;on=false;if(line)line.remove();
-    const pts=Z.pts,step=Math.max(1,Math.ceil(pts.length/150));Z.pts=pts.filter((p,i)=>i%step===0);
+    const step=Math.max(1,Math.ceil(Z.pts.length/150));Z.pts=Z.pts.filter((p,i)=>i%step===0);
     Z.drawing=false;
-    if(Z.pts.length<3){Z.pts=[];Z.msg="Trait trop court : entoure la zone d'un seul trait continu."}else Z.msg="Zone prête. Choisis un secteur si tu veux, puis clique « Chercher dans la zone ».";
-    if(P.search.mode==="zone"){P.search.results=[];P.search.total=0}
-    rRecherche()};
+    if(Z.pts.length<3){Z.pts=[];Z.msg="Trait trop court : entoure la zone d'un seul trait continu."}else Z.msg="";
+    rCarte()};
   el.addEventListener("pointerup",end,true);el.addEventListener("pointercancel",end,true);
 }
 function inPoly(pt,poly){let ins=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const[yi,xi]=poly[i],[yj,xj]=poly[j];if(((yi>pt[0])!==(yj>pt[0]))&&(pt[1]<(xj-xi)*(pt[0]-yi)/(yj-yi)+xi))ins=!ins}return ins}
 function kmDist(a,b){const R=6371,r=Math.PI/180,dLa=(b[0]-a[0])*r,dLo=(b[1]-a[1])*r;const h=Math.sin(dLa/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
-async function zoneSearch(){
-  const S=P.search,poly=Z.pts;if(poly.length<3||Z.running)return;
-  const c=[poly.reduce((a,p)=>a+p[0],0)/poly.length,poly.reduce((a,p)=>a+p[1],0)/poly.length];
-  const rad=Math.max(...poly.map(p=>kmDist(c,p)));
-  if(rad>50){Z.msg="Zone trop grande : dessine une zone de moins de 100 km de large.";rRecherche();return}
-  const sec=SEC(Z.secteur),MAXP=40;
-  Object.assign(S,{mode:"zone",secteur:Z.secteur,results:[],page:0,pages:0,total:0,err:"",villeLabel:"zone dessinée",fermes:0,opposees:0,cps:null});
-  Z.running=true;Z.stop=false;Z.msg="Recherche dans la zone…";rRecherche();
-  const seen=new Set();let page=1,pages=1,vus=0;
-  try{
-    while(page<=pages&&page<=MAXP&&!Z.stop){
-      const u=new URL("https://recherche-entreprises.api.gouv.fr/near_point");
-      u.searchParams.set("lat",c[0].toFixed(5));u.searchParams.set("long",c[1].toFixed(5));u.searchParams.set("radius",Math.max(.5,rad).toFixed(1));
-      if(sec)u.searchParams.set("activite_principale",sec.naf.join(","));
-      u.searchParams.set("per_page","25");u.searchParams.set("page",String(page));
-      let r;for(let essai=0;essai<4;essai++){r=await fetch(u);if(r.status!==429)break;await sleep(1500*(essai+1))}
-      if(!r.ok)throw new Error(r.status===429?"Trop de recherches d'un coup : attends quelques secondes et réessaie.":"La recherche a échoué (erreur "+r.status+").");
-      const j=await r.json();pages=j.total_pages||0;
-      (j.results||[]).forEach(e=>{
-        vus++;if(!e||seen.has(e.siren))return;
-        const ets=(e.matching_etablissements||[]).filter(x=>x&&x.latitude!=null&&x.longitude!=null);
-        const et=ets.find(x=>x.etat_administratif!=="F"&&inPoly([+x.latitude,+x.longitude],poly));
-        if(!et)return;
-        seen.add(e.siren);
-        const m=mapEnt({...e,matching_etablissements:[et]});
-        if(m.ferme){S.fermes++;return}
-        if(m.opposition){S.opposees++;return}
-        m.lat=+et.latitude;m.lng=+et.longitude;S.results.push(m);
-      });
-      S.total=S.results.length;
-      const z=$("#zMsg");if(z)z.textContent=`Recherche… ${S.results.length} entreprise${S.results.length>1?"s":""} trouvée${S.results.length>1?"s":""} dans ta zone (page ${page}/${Math.min(pages,MAXP)})`;
-      page++;await sleep(250);
-    }
-    Z.msg=S.results.length?`${S.results.length} entreprise${S.results.length>1?"s":""} dans ta zone${page<=pages&&!Z.stop?" (les 1 000 plus proches du centre examinées : resserre la zone ou choisis un secteur pour aller plus loin)":""}.`:"Aucune entreprise trouvée dans cette zone. Agrandis-la ou change de secteur.";
-    if(Z.stop)Z.msg="Recherche arrêtée. "+S.results.length+" entreprise(s) trouvée(s).";
-  }catch(e){S.err=netMsg(e);Z.msg=""}
-  Z.running=false;if(state.view==="p-recherche")rRecherche();
-}
 
 /* ---------- générateur de leads ---------- */
 const G={secteur:"Restaurants",lieu:"",n:20,onlyPhone:true,run:null};
