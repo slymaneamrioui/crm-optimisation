@@ -7,7 +7,26 @@ const RESULTATS=[
  {k:"rdv",l:"RDV",s:"rendez-vous fixé",key:"1"},{k:"rappel",l:"Rappel",s:"intéressé, pas le temps",key:"2"},{k:"pas_repondu",l:"Pas répondu",s:"messagerie, revient en file",key:"3"},
  {k:"refus",l:"Refus",s:"pas intéressé",key:"4"},{k:"hors_cible",l:"Hors cible",s:"pas notre client type",key:"5"},{k:"mauvais_num",l:"Mauvais no",s:"numéro invalide",key:"6"}];
 const RL=Object.fromEntries(RESULTATS.map(r=>[r.k,r.l]));RL.passer="Passé";
-const REGIONS=["Montréal","Laval","Rive-Sud","Rive-Nord","Montérégie","Laurentides","Lanaudière","Estrie","Centre-du-Québec","Mauricie","Capitale-Nationale","Chaudière-Appalaches","Outaouais","Saguenay–Lac-Saint-Jean","Bas-Saint-Laurent","Abitibi-Témiscamingue","Côte-Nord","Gaspésie"];
+const REGIONS=["Montréal","Laval","Montérégie","Laurentides","Lanaudière","Estrie","Centre-du-Québec","Mauricie","Capitale-Nationale","Chaudière-Appalaches","Outaouais","Saguenay–Lac-Saint-Jean","Bas-Saint-Laurent","Abitibi-Témiscamingue","Côte-Nord","Gaspésie–Îles-de-la-Madeleine","Nord-du-Québec"];
+const VILLES_REG={
+"Montréal":"Montréal|Anjou|Saint-Léonard|Montréal-Nord|Pointe-aux-Trembles|Rivière-des-Prairies|Verdun|Lachine|LaSalle|Saint-Laurent|Dorval|Pointe-Claire|Kirkland|Beaconsfield|Pierrefonds|Roxboro|Dollard-des-Ormeaux|Westmount|Outremont|Mont-Royal|Ville Mont-Royal|Montréal-Ouest|Montréal-Est|Hampstead|Côte-Saint-Luc|Baie-D'Urfé|Sainte-Anne-de-Bellevue|Senneville|L'Île-Bizard|Île-Bizard|Rosemont|Villeray|Ahuntsic|Hochelaga|Plateau-Mont-Royal|Le Plateau-Mont-Royal|Côte-des-Neiges|Notre-Dame-de-Grâce|Mercier|Saint-Michel|Parc-Extension|Ville-Marie|Le Sud-Ouest|Griffintown|Saint-Henri",
+"Laval":"Laval|Chomedey|Sainte-Rose|Vimont|Auteuil|Fabreville|Laval-des-Rapides|Pont-Viau|Duvernay|Sainte-Dorothée|Saint-François|Laval-Ouest|Îles-Laval",
+"Montérégie":"Longueuil|Saint-Hubert|Greenfield Park|Le Vieux-Longueuil|Brossard|Saint-Lambert|Boucherville|Châteauguay|La Prairie|Candiac|Delson|Saint-Constant|Sainte-Catherine|Mercier|Léry|Saint-Jean-sur-Richelieu|Chambly|Carignan|Beloeil|Belœil|McMasterville|Mont-Saint-Hilaire|Otterburn Park|Saint-Basile-le-Grand|Saint-Bruno-de-Montarville|Sainte-Julie|Varennes|Verchères|Contrecoeur|Contrecœur|Sorel-Tracy|Saint-Joseph-de-Sorel|Sainte-Anne-de-Sorel|Sainte-Victoire-de-Sorel|Saint-Ours|Saint-Robert|Massueville|Yamaska|Saint-Hyacinthe|Acton Vale|Granby|Bromont|Waterloo|Cowansville|Farnham|Bedford|Sutton|Lac-Brome|Knowlton|Shefford|Saint-Alphonse-de-Granby|Vaudreuil-Dorion|Saint-Lazare|Pincourt|L'Île-Perrot|Notre-Dame-de-l'Île-Perrot|Notre-Dame-De-L'Île-Perrot|Les Cèdres|Coteau-du-Lac|Saint-Zotique|Rigaud|Hudson|Saint-Télesphore|Salaberry-de-Valleyfield|Valleyfield|Beauharnois|Sainte-Martine|Saint-Rémi|Napierville|Saint-Philippe|Saint-Mathieu|Marieville|Rougemont|Saint-Césaire|Richelieu|Saint-Mathias-sur-Richelieu|Iberville|Lacolle|Saint-Amable|Calixa-Lavallée|Huntingdon|Ormstown|Les Coteaux|Saint-Pie|Saint-Damase|Saint-Denis-sur-Richelieu|Saint-Charles-sur-Richelieu",
+"Laurentides":"Saint-Jérôme|Mirabel|Blainville|Boisbriand|Sainte-Thérèse|Rosemère|Lorraine|Bois-des-Filion|Sainte-Anne-des-Plaines|Saint-Eustache|Deux-Montagnes|Pointe-Calumet|Sainte-Marthe-sur-le-Lac|Saint-Joseph-du-Lac|Oka|Saint-Colomban|Saint-Hippolyte|Prévost|Sainte-Sophie|Saint-Lin|Sainte-Adèle|Saint-Sauveur|Piedmont|Morin-Heights|Sainte-Agathe-des-Monts|Val-David|Val-Morin|Mont-Tremblant|Saint-Faustin-Lac-Carré|Labelle|Mont-Laurier|Lachute|Brownsburg-Chatham|Saint-André-d'Argenteuil|Saint-Placide|Sainte-Anne-des-Lacs|Estérel|Rivière-Rouge|Gore|Wentworth-Nord",
+"Lanaudière":"Terrebonne|Lachenaie|La Plaine|Mascouche|Repentigny|Le Gardeur|Charlemagne|L'Assomption|L'Épiphanie|Saint-Sulpice|Lavaltrie|Lanoraie|Berthierville|Joliette|Notre-Dame-des-Prairies|Saint-Charles-Borromée|Saint-Paul|Crabtree|Saint-Lin–Laurentides|Saint-Lin-Laurentides|Sainte-Julienne|Rawdon|Saint-Jacques|Saint-Esprit|Saint-Roch-de-l'Achigan|Saint-Calixte|Chertsey|Saint-Donat|Saint-Gabriel|Saint-Félix-de-Valois|Saint-Jean-de-Matha|Saint-Thomas|Saint-Ambroise-de-Kildare|Sainte-Mélanie|Saint-Alexis",
+"Estrie":"Sherbrooke|Lennoxville|Fleurimont|Rock Forest|Brompton|Saint-Élie-d'Orford|Magog|Orford|Eastman|Austin|Sainte-Catherine-de-Hatley|North Hatley|Coaticook|Compton|Waterville|East Angus|Windsor|Val-des-Sources|Asbestos|Richmond|Lac-Mégantic|Cookshire-Eaton|Stanstead|Ayer's Cliff|Granby (Estrie)|Ascot Corner|Stoke|Saint-Denis-de-Brompton|Weedon|Danville|Valcourt|Racine|Melbourne|Bury|Scotstown|Martinville|Hatley",
+"Centre-du-Québec":"Drummondville|Saint-Nicéphore|Saint-Germain-de-Grantham|Saint-Cyrille-de-Wendover|Saint-Charles-de-Drummond|L'Avenir|Saint-Bonaventure|Saint-Joachim-de-Courval|Saint-Lucien|Wickham|Saint-Majorique|Saint-Guillaume|Notre-Dame-du-Bon-Conseil|Saint-Félix-de-Kingsey|Kingsey Falls|Bon-Conseil|Victoriaville|Saint-Christophe-d'Arthabaska|Arthabaska|Warwick|Tingwick|Princeville|Saint-Samuel|Saint-Albert|Saint-Valère|Daveluyville|Sainte-Clotilde-de-Horton|Plessisville|Lyster|Sainte-Sophie-d'Halifax|Laurierville|Inverness|Saint-Ferdinand|Nicolet|Bécancour|Saint-Célestin|Sainte-Monique|Saint-Léonard-d'Aston|Gentilly|Pierreville|Baie-du-Febvre|Sainte-Eulalie|Saint-Wenceslas|Sainte-Perpétue|Saint-Zéphirin-de-Courval|Durham-Sud|Lefebvre|Saint-Eugène",
+"Mauricie":"Trois-Rivières|Cap-de-la-Madeleine|Shawinigan|Grand-Mère|La Tuque|Louiseville|Bécancour (Mauricie)|Saint-Boniface|Notre-Dame-du-Mont-Carmel|Saint-Étienne-des-Grès|Yamachiche|Pointe-du-Lac|Champlain|Batiscan|Sainte-Anne-de-la-Pérade|Saint-Tite|Saint-Narcisse|Saint-Maurice|Maskinongé|Saint-Paulin|Saint-Alexis-des-Monts|Saint-Mathieu-du-Parc|Saint-Barnabé|Sainte-Geneviève-de-Batiscan",
+"Capitale-Nationale":"Québec|Quebec City|Ville de Québec|Sainte-Foy|Sillery|Charlesbourg|Beauport|Loretteville|Val-Bélair|L'Ancienne-Lorette|Ancienne-Lorette|Cap-Rouge|Lac-Beauport|Stoneham|Stoneham-et-Tewkesbury|Shannon|Sainte-Catherine-de-la-Jacques-Cartier|Saint-Augustin-de-Desmaures|Pont-Rouge|Donnacona|Neuville|Portneuf|Saint-Raymond|Saint-Marc-des-Carrières|Boischatel|L'Ange-Gardien|Château-Richer|Sainte-Anne-de-Beaupré|Saint-Ferréol-les-Neiges|Baie-Saint-Paul|La Malbaie|Clermont|Île-d'Orléans|Saint-Pierre-de-l'Île-d'Orléans|Lac-Saint-Charles|Wendake|Fossambault-sur-le-Lac|Saint-Gabriel-de-Valcartier|Sainte-Brigitte-de-Laval",
+"Chaudière-Appalaches":"Lévis|Saint-Romuald|Charny|Saint-Nicolas|Saint-Jean-Chrysostome|Saint-Rédempteur|Pintendre|Saint-Henri|Saint-Lambert-de-Lauzon|Sainte-Marie|Saint-Georges|Beauceville|Saint-Joseph-de-Beauce|Vallée-Jonction|Saint-Elzéar|Sainte-Hénédine|Thetford Mines|Black Lake|Disraeli|Montmagny|L'Islet|Saint-Jean-Port-Joli|Saint-Agapit|Saint-Apollinaire|Laurier-Station|Sainte-Croix|Lotbinière|Saint-Anselme|Sainte-Claire|Saint-Lazare-de-Bellechasse|Saint-Damien-de-Buckland|Lac-Etchemin|Saint-Prosper|Saint-Martin|La Guadeloupe|Saint-Côme-Linière|East Broughton|Scott|Frampton",
+"Outaouais":"Gatineau|Hull|Aylmer|Buckingham|Masson-Angers|Chelsea|Cantley|Val-des-Monts|L'Ange-Gardien (Outaouais)|Pontiac|Shawville|Maniwaki|Thurso|Papineauville|Montebello|Saint-André-Avellin|Wakefield|La Pêche|Gracefield|Fort-Coulonge|Mansfield-et-Pontefract|Plaisance",
+"Saguenay–Lac-Saint-Jean":"Saguenay|Chicoutimi|Jonquière|La Baie|Alma|Roberval|Dolbeau-Mistassini|Saint-Félicien|Saint-Prime|Normandin|Métabetchouan|Métabetchouan–Lac-à-la-Croix|Desbiens|Hébertville|Saint-Bruno|Saint-Honoré|Saint-Fulgence|Saint-Ambroise|Laterrière|Shipshaw|Chambord|Saint-Gédéon|Mashteuiatsh|L'Anse-Saint-Jean",
+"Bas-Saint-Laurent":"Rimouski|Rivière-du-Loup|Matane|Amqui|Mont-Joli|Trois-Pistoles|Cabano|Témiscouata-sur-le-Lac|Pohénégamook|La Pocatière|Saint-Pascal|Kamouraska|Cacouna|L'Isle-Verte|Sayabec|Causapscal|Pointe-au-Père|Le Bic|Saint-Anaclet-de-Lessard|Dégelis|Squatec|Saint-Alexandre-de-Kamouraska",
+"Abitibi-Témiscamingue":"Rouyn-Noranda|Val-d'Or|Amos|La Sarre|Ville-Marie (Témiscamingue)|Témiscaming|Malartic|Senneterre|Macamic|Lorrainville|Notre-Dame-du-Nord|Cadillac|Evain|Barraute|Duparquet|Palmarolle|Taschereau",
+"Côte-Nord":"Baie-Comeau|Sept-Îles|Port-Cartier|Forestville|Les Escoumins|Tadoussac|Havre-Saint-Pierre|Fermont|Chute-aux-Outardes|Pointe-aux-Outardes|Ragueneau|Pointe-Lebel|Longue-Rive|Bergeronnes|Les Bergeronnes|Sacré-Coeur|Natashquan",
+"Gaspésie–Îles-de-la-Madeleine":"Gaspé|Sainte-Anne-des-Monts|Chandler|Carleton-sur-Mer|New Richmond|Bonaventure|Paspébiac|New Carlisle|Percé|Grande-Rivière|Pabos|Maria|Matapédia|Pointe-à-la-Croix|Cap-Chat|Murdochville|Les Îles-de-la-Madeleine|Cap-aux-Meules|Grande-Vallée|Mont-Saint-Pierre",
+"Nord-du-Québec":"Chibougamau|Chapais|Lebel-sur-Quévillon|Matagami|Radisson|Kuujjuaq|Chisasibi|Mistissini|Waswanipi|Eeyou Istchee Baie-James"};
+let _vrC=null;const VR=()=>{if(!_vrC){_vrC={};Object.entries(VILLES_REG).forEach(([r,v])=>v.split("|").forEach(c=>{const k=norm(c.replace(/\s*\(.*\)$/,""));_vrC[k]=_vrC[k]||r}))}return _vrC};
 const INDICATIFS={"514":"Montréal","438":"Montréal","263":"Montréal","450":"Couronne de Montréal","579":"Couronne de Montréal","354":"Couronne de Montréal","819":"Estrie, Mauricie, Outaouais, Centre-du-Québec","873":"Estrie, Mauricie, Outaouais, Centre-du-Québec","418":"Québec et Est","581":"Québec et Est","367":"Québec et Est"};
 const CHAMPS=[
  {k:"entreprise",l:"Entreprise",syn:["entreprise","societe","société","compagnie","nom entreprise","business","raison sociale","company","nom"]},
@@ -56,7 +75,14 @@ const pill=st=>`<span class="pill s-${esc(st||"nouveau")}"><span class="dot"></s
 function relTag(iso){const d=daysFrom(iso);if(d===null)return"";if(d<0)return`<span class="tag late">En retard ${-d} j</span>`;if(d===0)return`<span class="tag today">Aujourd'hui ${new Date(iso).toLocaleTimeString("fr-CA",{hour:"2-digit",minute:"2-digit"})}</span>`;if(d<=7)return`<span class="tag soon">Dans ${d} j</span>`;return`<span class="tag soon">${esc(fmtD(iso))}</span>`}
 function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(t._t);t._t=setTimeout(()=>t.hidden=true,2600)}
 function ls(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
-function regionOf(l){if(l.region)return l.region;const d=digits(l.tel);return INDICATIFS[d.slice(0,3)]||""}
+function regionOf(l){
+  if(l.region)return l.region;
+  const v=norm(l.ville);if(v&&VR()[v])return VR()[v];
+  if(v){const v2=v.replace(/^(ville de |municipalite de |st-|ste-)/,m=>m==="st-"?"saint-":m==="ste-"?"sainte-":"");if(VR()[v2])return VR()[v2]}
+  const a=norm(l.adresse);if(a){for(const part of a.split(",").map(x=>x.trim()).reverse()){if(VR()[part])return VR()[part]}}
+  const cp=/([a-z]\d[a-z])\s?\d[a-z]\d/i.exec(l.adresse||"");if(cp){const f=cp[1].toUpperCase();if(f.startsWith("H7"))return"Laval";if(f[0]==="H")return"Montréal"}
+  return"";
+}
 function googleInfo(l){const m=/([\d]+(?:[.,]\d)?)\s*★?\s*\(?\s*(\d+)\s*avis/i.exec(l.google||"");return m?{note:parseFloat(m[1].replace(",",".")),avis:+m[2]}:null}
 function concurrent(l){const m=/devant\s*:\s*([^-|)]+)/i.exec((l.google||"")+" "+(l.commentaire||""));return m?m[1].trim():""}
 function yn(v){const s=norm(v);if(!s||s==="?")return"?";if(/^(o|y|1|vrai|true)/.test(s))return"oui";if(/^(n|0|faux|false|aucun)/.test(s))return"non";if(/\.|http|www/.test(s))return"oui";return"?"}
@@ -82,7 +108,7 @@ function accroche(l){
 }
 
 /* ---------- état ---------- */
-const state={view:"accueil",recId:null,filter:"tous",fSecteur:"",fVille:"",fSource:"",q:"",sort:"recent",shown:200,sel:new Set(),cSecteur:"",cVille:"",cSource:"",fFour:"",cFour:"",cFin:"",cStat:"",cSite:"",fin:"2-4",finFour:""};
+const state={view:"accueil",recId:null,filter:"tous",fSecteur:"",fVille:"",fSource:"",q:"",sort:"recent",shown:200,sel:new Set(),cRegion:"",fRegion:"",cSecteur:"",cVille:"",cSource:"",fFour:"",cFour:"",cFin:"",cStat:"",cSite:"",fin:"2-4",finFour:""};
 let leads=new Map(),db=null,col=null,loaded=false,canWrite=true,undo=[],skipped=new Set();
 const pending={},busy={};
 const list=()=>[...leads.values()];
@@ -119,7 +145,7 @@ function errMsg(e){const c=e&&e.code;$("#sync").textContent=c==="quota_exceeded"
 async function remove(ids){for(const id of ids){leads.delete(id);try{await col.doc(id).delete()}catch(e){errMsg(e)}}}
 
 /* ---------- file d'appels ---------- */
-function inFilters(l,p){return(!state[p+"Secteur"]||l.secteur===state[p+"Secteur"])&&(!state[p+"Ville"]||(l.ville||"")===state[p+"Ville"])&&(!state[p+"Source"]||(l.source||"")===state[p+"Source"])&&(!state[p+"Four"]||(l.fournisseur||"")===state[p+"Four"])&&(p!=="c"||((!state.cFin||inFin(l,state.cFin))&&(!state.cSite||(l.site||"?")===state.cSite)))}
+function inFilters(l,p){return(!state[p+"Secteur"]||l.secteur===state[p+"Secteur"])&&(!state[p+"Ville"]||(l.ville||"")===state[p+"Ville"])&&(!state[p+"Source"]||(l.source||"")===state[p+"Source"])&&(!state[p+"Four"]||(l.fournisseur||"")===state[p+"Four"])&&(!state[p+"Region"]||regionOf(l)===state[p+"Region"])&&(p!=="c"||((!state.cFin||inFin(l,state.cFin))&&(!state.cSite||(l.site||"?")===state.cSite)))}
 /* fins de contrat : anniversaire de la création du domaine */
 function addMonthsD(d,n){const r=new Date(d.getFullYear(),d.getMonth()+n,1);const last=new Date(r.getFullYear(),r.getMonth()+1,0).getDate();r.setDate(Math.min(d.getDate(),last));return r}
 function anniv(l){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(l.domaine||"");if(!m)return null;const t=new Date();t.setHours(0,0,0,0);
@@ -315,19 +341,21 @@ function homeHTML(){
 
 /* session d'appels */
 function options(arr,cur,all){return`<option value="">${esc(all)}</option>`+arr.map(x=>`<option value="${esc(x)}" ${x===cur?"selected":""}>${esc(x)}</option>`).join("")}
+const regionsUsed=()=>{const set=new Set(list().map(regionOf).filter(Boolean));return[...REGIONS.filter(r=>set.has(r)),...[...set].filter(r=>!REGIONS.includes(r))]};
 const uniq=(k)=>[...new Set(list().map(l=>l[k]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"fr"));
 function callHTML(){
   if(!leads.size)return`<div class="page-h"><h1>Session d'appels</h1></div>`+emptyLeads();
   const q=queue(),l=q[0];
-  const nAct=["cSecteur","cVille","cSource","cFour","cFin","cStat","cSite"].filter(k=>state[k]).length;
+  const nAct=["cRegion","cSecteur","cVille","cSource","cFour","cFin","cStat","cSite"].filter(k=>state[k]).length;
   const filt=`<details class="fbox" id="fbox" ${state.fOpen??!matchMedia("(max-width:760px)").matches?"open":""}><summary>Filtres${nAct?` · ${nAct} actif${nAct>1?"s":""}`:""}</summary><div class="filters" data-keep><label for="cSecteur">Secteur</label><select class="sel" id="cSecteur">${options(uniq("secteur"),state.cSecteur,"Tous les secteurs")}</select>
+    <label for="cRegion">Région</label><select class="sel" id="cRegion">${options(regionsUsed(),state.cRegion,"Toutes les régions")}</select>
     <label for="cVille">Ville</label><select class="sel" id="cVille">${options(uniq("ville"),state.cVille,"Toutes les villes")}</select>
     <label for="cSource">Liste</label><select class="sel" id="cSource">${options(uniq("source"),state.cSource,"Toutes les listes")}</select>
     <label for="cFour">Fournisseur</label><select class="sel" id="cFour">${options(uniq("fournisseur"),state.cFour,"Tous les fournisseurs")}</select>
     <label for="cFin">Fin de contrat</label><select class="sel" id="cFin"><option value="">Tous les leads</option>${Object.entries(FENETRES).map(([k,v])=>`<option value="${k}" ${state.cFin===k?"selected":""}>${esc(v[2])}</option>`).join("")}</select>
     <label for="cStat">Type</label><select class="sel" id="cStat">${[["","Tous les types"],["nouveau","Nouveaux seulement"],["rappel","Rappels dus seulement"],["pas_repondu","Pas répondu seulement"]].map(([k,t])=>`<option value="${k}" ${state.cStat===k?"selected":""}>${t}</option>`).join("")}</select>
     <label for="cSite">Site web</label><select class="sel" id="cSite">${[["","Avec ou sans site"],["non","Sans site web"],["oui","Avec site web"]].map(([k,t])=>`<option value="${k}" ${state.cSite===k?"selected":""}>${t}</option>`).join("")}</select>
-    ${state.cSecteur||state.cVille||state.cSource||state.cFour||state.cFin||state.cStat||state.cSite?`<button class="btn sm ghost" id="cReset">Enlever les filtres</button>`:""}</div></details>`;
+    ${state.cRegion||state.cSecteur||state.cVille||state.cSource||state.cFour||state.cFin||state.cStat||state.cSite?`<button class="btn sm ghost" id="cReset">Enlever les filtres</button>`:""}</div></details>`;
   const head=`<div class="page-h"><h1>Session d'appels</h1><span class="sub">${q.length} en file · ${todayCalls().length} appels faits aujourd'hui</span><button class="btn sm ml-auto" id="bUndo" ${undo.length?"":"disabled"}>Annuler le dernier résultat</button></div>`;
   if(!l)return head+filt+`<div class="card"><div class="empty"><b>File vide${state.cSecteur||state.cVille||state.cSource||state.cFour||state.cFin||state.cStat||state.cSite?" pour ces filtres":""}.</b><br>Les leads sans réponse reviennent 3 h après le dernier essai. Les rappels reviennent à l'heure prévue.</div></div>`;
   const g=googleInfo(l),reg=regionOf(l);
@@ -380,13 +408,14 @@ function leadsHTML(){
   <div class="toolbar">${[{k:"tous",l:"Tous"},...STATUTS].map(s=>`<button class="chip ${state.filter===s.k?"on":""}" data-filter="${s.k}">${esc(s.l)} · ${cnt(s.k)}</button>`).join("")}</div>
   <div class="filters" data-keep><input class="sel" id="fQ" placeholder="Filtrer…" value="${esc(state.q)}" style="max-width:220px">
     <select class="sel" id="fSecteur" aria-label="Secteur">${options(uniq("secteur"),state.fSecteur,"Tous les secteurs")}</select>
+    <select class="sel" id="fRegion" aria-label="Région">${options(regionsUsed(),state.fRegion,"Toutes les régions")}</select>
     <select class="sel" id="fVille" aria-label="Ville">${options(uniq("ville"),state.fVille,"Toutes les villes")}</select>
     <select class="sel" id="fSource" aria-label="Liste">${options(uniq("source"),state.fSource,"Toutes les listes")}</select>
     <select class="sel" id="fFour" aria-label="Fournisseur">${options(uniq("fournisseur"),state.fFour,"Tous les fournisseurs")}</select>
     <select class="sel" id="fSort" aria-label="Trier">${[["recent","Plus récents"],["nom","Entreprise A-Z"],["ville","Ville A-Z"],["appel","Dernier appel"]].map(([k,t])=>`<option value="${k}" ${state.sort===k?"selected":""}>${t}</option>`).join("")}</select></div>
   ${sel.size?`<div class="bulk"><b>${sel.size} sélectionné${sel.size>1?"s":""}</b><select class="sel" id="bulkSt" aria-label="Nouveau statut"><option value="">Changer le statut…</option>${STATUTS.map(s=>`<option value="${s.k}">${esc(s.l)}</option>`).join("")}</select><button class="btn sm" id="bulkFour">Définir le fournisseur</button><button class="btn sm danger" id="bulkDel">Supprimer</button><button class="btn sm ghost" id="bulkClear">Tout désélectionner</button></div>`:""}
-  <div class="card tbl-wrap"><table class="t"><thead><tr><th><input type="checkbox" id="selAll" aria-label="Tout sélectionner" ${L.length&&L.every(l=>sel.has(l.id))?"checked":""}></th><th data-sort="nom">Entreprise</th><th class="hide-m">Contact</th><th>Téléphone</th><th data-sort="ville">Ville</th><th class="hide-m">Secteur</th><th class="hide-m">Fournisseur</th><th>Statut</th><th class="hide-m" data-sort="appel">Dernier appel</th></tr></thead><tbody>
-  ${shown.map(l=>`<tr class="r" data-open="${esc(l.id)}"><td><input type="checkbox" data-sel="${esc(l.id)}" ${sel.has(l.id)?"checked":""} aria-label="Sélectionner"></td><td><b>${esc(l.entreprise||"Sans nom")}</b></td><td class="hide-m">${esc(l.contact||"")}</td><td style="white-space:nowrap">${esc(phoneFmt(l.tel))}</td><td>${esc(l.ville||"")}</td><td class="hide-m">${esc(l.secteur||"")}</td><td class="hide-m">${esc(l.fournisseur||"")}</td><td>${pill(l.statut)}${l.statut==="rappel"?" "+relTag(l.rappel):""}</td><td class="hide-m small muted">${l.dernierAppel?esc(fmtDT(l.dernierAppel)):"—"}</td></tr>`).join("")||`<tr><td colspan="9"><div class="empty">Aucun lead ne correspond.</div></td></tr>`}
+  <div class="card tbl-wrap"><table class="t"><thead><tr><th><input type="checkbox" id="selAll" aria-label="Tout sélectionner" ${L.length&&L.every(l=>sel.has(l.id))?"checked":""}></th><th data-sort="nom">Entreprise</th><th class="hide-m">Contact</th><th>Téléphone</th><th data-sort="ville">Ville</th><th class="hide-m">Région</th><th class="hide-m">Secteur</th><th class="hide-m">Fournisseur</th><th>Statut</th><th class="hide-m" data-sort="appel">Dernier appel</th></tr></thead><tbody>
+  ${shown.map(l=>`<tr class="r" data-open="${esc(l.id)}"><td><input type="checkbox" data-sel="${esc(l.id)}" ${sel.has(l.id)?"checked":""} aria-label="Sélectionner"></td><td><b>${esc(l.entreprise||"Sans nom")}</b></td><td class="hide-m">${esc(l.contact||"")}</td><td style="white-space:nowrap">${esc(phoneFmt(l.tel))}</td><td>${esc(l.ville||"")}</td><td class="hide-m">${esc(regionOf(l))}</td><td class="hide-m">${esc(l.secteur||"")}</td><td class="hide-m">${esc(l.fournisseur||"")}</td><td>${pill(l.statut)}${l.statut==="rappel"?" "+relTag(l.rappel):""}</td><td class="hide-m small muted">${l.dernierAppel?esc(fmtDT(l.dernierAppel)):"—"}</td></tr>`).join("")||`<tr><td colspan="10"><div class="empty">Aucun lead ne correspond.</div></td></tr>`}
   </tbody></table></div>
   ${L.length>shown.length?`<div style="text-align:center;margin-top:12px"><button class="btn" id="bMore">Afficher ${Math.min(200,L.length-shown.length)} de plus</button></div>`:""}`;
 }
@@ -394,16 +423,18 @@ function leadsHTML(){
 /* fins de contrat */
 function contratsHTML(){
   const withDom=list().filter(l=>anniv(l)),w=state.fin;
-  const L=withDom.filter(l=>inFin(l,w)&&(!state.finFour||(l.fournisseur||"")===state.finFour)).sort((a,b)=>anniv(a).days-anniv(b).days);
-  const n=k=>withDom.filter(l=>inFin(l,k)&&(!state.finFour||(l.fournisseur||"")===state.finFour)).length;
+  const fx=l=>(!state.finFour||(l.fournisseur||"")===state.finFour)&&(!state.finRegion||regionOf(l)===state.finRegion);
+  const L=withDom.filter(l=>inFin(l,w)&&fx(l)).sort((a,b)=>anniv(a).days-anniv(b).days);
+  const n=k=>withDom.filter(l=>inFin(l,k)&&fx(l)).length;
   const sansDate=list().length-withDom.length;
   return`<div class="page-h"><h1>Fins de contrat</h1><span class="sub">Date anniversaire de la création du domaine · ${L.length} lead${L.length>1?"s":""}</span>
     ${L.length?`<button class="btn primary ml-auto" id="bFinCall">${L.length>1?`Appeler ces ${L.length} leads`:"Appeler ce lead"}</button>`:""}</div>
   <div class="toolbar">${Object.entries(FENETRES).map(([k,v])=>`<button class="chip ${w===k?"on":""}" data-fin="${k}">${esc(v[2])} · ${n(k)}</button>`).join("")}</div>
   <div class="filters" data-keep><label for="finFour">Fournisseur</label><select class="sel" id="finFour">${options(uniq("fournisseur"),state.finFour,"Tous les fournisseurs")}</select>
+    <label for="finRegion">Région</label><select class="sel" id="finRegion">${options(regionsUsed(),state.finRegion||"","Toutes les régions")}</select>
     <span class="small muted">${sansDate?sansDate+" lead"+(sansDate>1?"s":"")+" sans date de création du domaine ne figure"+(sansDate>1?"nt":"")+" pas ici.":""}</span></div>
-  <div class="card tbl-wrap"><table class="t"><thead><tr><th>Entreprise</th><th>Fournisseur</th><th class="hide-m">Ville</th><th class="hide-m">Secteur</th><th class="hide-m">Création du domaine</th><th>Renouvellement</th><th>Dans</th><th>Statut</th></tr></thead><tbody>
-  ${L.map(l=>{const a=anniv(l);return`<tr class="r" data-open="${esc(l.id)}"><td><b>${esc(l.entreprise)}</b><div class="small muted">${esc(phoneFmt(l.tel))}</div></td><td>${esc(l.fournisseur||"—")}</td><td class="hide-m">${esc(l.ville||"")}</td><td class="hide-m">${esc(l.secteur||"")}</td><td class="hide-m">${esc(l.domaine)}</td><td style="white-space:nowrap"><b>${esc(fmtA(a.date))}</b><div class="small muted">${a.ans} an${a.ans>1?"s":""}</div></td><td><span class="tag ${a.mois<2?"late":a.mois<=4?"today":"soon"}">${a.days} j</span></td><td>${pill(l.statut)}</td></tr>`}).join("")||`<tr><td colspan="8"><div class="empty">Aucun lead dans cette période.${withDom.length?"":"<br>Importe des leads avec la colonne « Création du domaine » pour les voir ici."}</div></td></tr>`}
+  <div class="card tbl-wrap"><table class="t"><thead><tr><th>Entreprise</th><th>Fournisseur</th><th class="hide-m">Ville</th><th class="hide-m">Région</th><th class="hide-m">Secteur</th><th class="hide-m">Création du domaine</th><th>Renouvellement</th><th>Dans</th><th>Statut</th></tr></thead><tbody>
+  ${L.map(l=>{const a=anniv(l);return`<tr class="r" data-open="${esc(l.id)}"><td><b>${esc(l.entreprise)}</b><div class="small muted">${esc(phoneFmt(l.tel))}</div></td><td>${esc(l.fournisseur||"—")}</td><td class="hide-m">${esc(l.ville||"")}</td><td class="hide-m">${esc(regionOf(l))}</td><td class="hide-m">${esc(l.secteur||"")}</td><td class="hide-m">${esc(l.domaine)}</td><td style="white-space:nowrap"><b>${esc(fmtA(a.date))}</b><div class="small muted">${a.ans} an${a.ans>1?"s":""}</div></td><td><span class="tag ${a.mois<2?"late":a.mois<=4?"today":"soon"}">${a.days} j</span></td><td>${pill(l.statut)}</td></tr>`}).join("")||`<tr><td colspan="9"><div class="empty">Aucun lead dans cette période.${withDom.length?"":"<br>Importe des leads avec la colonne « Création du domaine » pour les voir ici."}</div></td></tr>`}
   </tbody></table></div>`;
 }
 
@@ -650,8 +681,8 @@ document.addEventListener("click",e=>{
     case"bNew":newLead();break;
     case"nOk":{const ent=$("#nE").value.trim();if(!ent){toast("Indique au moins le nom de l'entreprise.");break}if(!col||!canWrite)break;const ref=col.doc();const l={entreprise:ent,contact:$("#nC").value.trim(),tel:phoneFmt($("#nT").value.trim()),ville:$("#nV").value.trim(),secteur:$("#nS").value.trim(),site:"?",ads:"?",statut:"nouveau",appels:0,historique:[],ordre:Date.now(),cree:new Date().toISOString(),id:ref.id};leads.set(ref.id,l);save(ref.id);closeModal();toast("Lead ajouté en file");break}
     case"bSect":{let n=0;list().forEach(l=>{if(badSect(l)){const sct=secteurAuto(l.entreprise,l.siteUrl);if(sct){if(/^\d{4}-\d{2}-\d{2}/.test(l.secteur||"")&&!l.domaine)l.domaine=l.secteur.slice(0,10);l.secteur=sct;save(l.id);n++}}});render();toast("Secteur ajouté à "+n+" lead"+(n>1?"s":""));break}
-    case"cReset":Object.assign(state,{cSecteur:"",cVille:"",cSource:"",cFour:"",cFin:"",cStat:"",cSite:""});skipped.clear();render();break;
-    case"bFinCall":state.cFin=state.fin;state.cStat="";state.cSite="";state.cFour=state.finFour;state.cSecteur=state.cVille=state.cSource="";skipped.clear();go("appeler");break;
+    case"cReset":Object.assign(state,{cRegion:"",cSecteur:"",cVille:"",cSource:"",cFour:"",cFin:"",cStat:"",cSite:""});skipped.clear();render();break;
+    case"bFinCall":state.cFin=state.fin;state.cRegion=state.finRegion||"";state.cStat="";state.cSite="";state.cFour=state.finFour;state.cSecteur=state.cVille=state.cSource="";skipped.clear();go("appeler");break;
     case"bulkFour":modal(`<div class="modal-h">Fournisseur de ${state.sel.size} lead${state.sel.size>1?"s":""}</div><div class="modal-b"><div class="f"><label for="bfV">Fournisseur web actuel</label><input id="bfV" list="dl_bf" placeholder="Ubiweb"><datalist id="dl_bf">${["Ubiweb",...uniq("fournisseur")].filter((x,i,a)=>a.indexOf(x)===i).map(x=>`<option value="${esc(x)}">`).join("")}</datalist></div><p class="small muted" style="margin:0">Laisse vide pour effacer le fournisseur.</p></div><div class="modal-f"><button class="btn" id="mX">Annuler</button><button class="btn primary" id="bfOk">Enregistrer</button></div>`);break;
     case"bfOk":{const v=$("#bfV").value.trim();const ids=[...state.sel];ids.forEach(id=>{const l=leads.get(id);if(l){l.fournisseur=v;save(id)}});state.sel.clear();closeModal();toast(ids.length+" lead(s) : fournisseur "+(v||"effacé"));break}
     case"bMore":state.shown+=200;render();break;
@@ -670,8 +701,8 @@ document.addEventListener("click",e=>{
   }
 });
 document.addEventListener("change",e=>{const el=e.target;
-  if(el.id==="finFour"){state.finFour=el.value;render();return}
-  if(["cSecteur","cVille","cSource","cFour","cFin","cStat","cSite","fSecteur","fVille","fSource","fFour"].includes(el.id)){state[el.id]=el.value;skipped.clear();state.shown=200;render();return}
+  if(el.id==="finFour"||el.id==="finRegion"){state[el.id]=el.value;render();return}
+  if(["cRegion","cSecteur","cVille","cSource","cFour","cFin","cStat","cSite","fRegion","fSecteur","fVille","fSource","fFour"].includes(el.id)){state[el.id]=el.value;skipped.clear();state.shown=200;render();return}
   if(el.id==="fSort"){state.sort=el.value;render();return}
   if(el.id==="bulkSt"&&el.value){[...state.sel].forEach(id=>{const l=leads.get(id);if(l){l.statut=el.value;if(el.value!=="rappel")l.rappel=null;save(id)}});toast(state.sel.size+" lead(s) passé(s) en « "+SL[el.value]+" »");state.sel.clear();render();return}
   if(el.dataset.map!=null){imp.map[+el.dataset.map]=el.value;render();return}
