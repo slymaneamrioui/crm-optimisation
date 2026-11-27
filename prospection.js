@@ -439,6 +439,13 @@ function googleCard(){
 }
 
 /* 2. Mes prospects */
+function domaine(u){try{return new URL(safeUrl(u)).hostname.replace(/^www\./,"")}catch(e){return""}}
+function normUrl(v){v=String(v||"").trim();if(!v)return"";if(!/^https?:\/\//i.test(v))v="https://"+v;return safeUrl(v)}
+function rowContact(p){
+  let n=[p.prenom,p.nom].filter(Boolean).join(" ");
+  if(!n&&p.dirigeants)n=String(p.dirigeants).split(",")[0].replace(/\s*\(.*\)\s*$/,"").trim();
+  return n?`<div class="small ellip" style="font-weight:500">👤 ${esc(n)}</div>`:`<div class="small muted ellip">👤 Contact inconnu</div>`;
+}
 function rListe(){
   const all=plist();const t=today();
   const groups=["À appeler",...PST.map(x=>x.k),"Tous"];
@@ -456,8 +463,9 @@ function rListe(){
   <div class="toolbar">${groups.map(g=>`<button class="chip ${P.filter===g?"on":""}" data-xfilter="${esc(g)}">${esc(g)} <b>${cnt(g)}</b></button>`).join("")}
    ${secs.length>1?`<select id="xSecF" style="margin-left:auto;padding:7px 10px;border:1px solid #d4d4d4;border-radius:8px"><option value="">Tous les secteurs</option>${secs.map(s=>`<option ${P.secFilter===s?"selected":""}>${esc(s)}</option>`).join("")}</select>`:""}</div>
   <div class="card">${L.length?L.map(p=>`<div class="list-row" data-xopen="${esc(p.id)}" style="flex-wrap:nowrap"><div class="avatar" style="background:${avatarColor(p.societe)}">${esc(initials(p.societe))}</div>
-     <div class="grow"><div class="ellip" style="font-weight:600">${esc(p.societe||"Sans nom")}</div><div class="small muted ellip">${esc([[p.prenom,p.nom].filter(Boolean).join(" "),p.secteur,p.ville].filter(Boolean).join(" · "))}</div>
-     <div class="mrow-meta">${ppill(p.statut)}${p.prochainAppel&&A_APPELER.includes(p.statut)?relTag(p.prochainAppel):""}${p.nbAppels?`<span class="small muted">${p.nbAppels} appel${p.nbAppels>1?"s":""}</span>`:""}${p.email?"":`<span class="small" style="color:#9a5300">pas de courriel</span>`}${p.siteWeb?`<span class="small">🌐 site</span>`:""}</div></div>
+     <div class="grow"><div class="ellip" style="font-weight:600">${esc(p.societe||"Sans nom")}</div>${rowContact(p)}<div class="small muted ellip">${esc([p.secteur,p.ville].filter(Boolean).join(" · "))}</div>
+     <div class="small ellip" style="margin-top:2px">${safeUrl(p.siteWeb)?`🌐 <a href="${esc(safeUrl(p.siteWeb))}" target="_blank" rel="noopener">${esc(domaine(p.siteWeb))}</a>`:`<span class="muted">🌐 Pas de site internet</span>`}</div>
+     <div class="mrow-meta">${ppill(p.statut)}${p.prochainAppel&&A_APPELER.includes(p.statut)?relTag(p.prochainAppel):""}${p.nbAppels?`<span class="small muted">${p.nbAppels} appel${p.nbAppels>1?"s":""}</span>`:""}${p.email?"":`<span class="small" style="color:#9a5300">pas de courriel</span>`}</div></div>
      ${p.tel?`<a class="qcall" href="${esc(telHref(p.tel))}" aria-label="Appeler">📞</a>`:`<span class="tag" style="background:#f1f1f1;color:#555">Pas de numéro</span>`}</div>`).join("")
    :`<div class="empty"><div class="big">📋</div>Aucun prospect ici.<br><button class="btn primary" data-v="p-recherche" style="margin-top:10px">🔍 Trouver des prospects</button></div>`}</div>`;
   const sf=$("#xSecF");if(sf)sf.onchange=()=>{P.secFilter=sf.value;rListe()};
@@ -483,6 +491,7 @@ function openProspect(id){
     <div class="f"><label>Courriel</label><input name="email" type="email" value="${esc(p.email||"")}"></div>
     <div class="f"><label>Secteur</label><select name="secteur"><option value=""></option>${SECTEURS.map(x=>`<option ${p.secteur===x.k?"selected":""}>${esc(x.k)}</option>`).join("")}</select></div>
     <div class="f"><label>Prochain appel</label><input name="prochainAppel" type="date" value="${esc(p.prochainAppel||"")}"></div>
+    <div class="f full"><label>Site internet</label><input name="siteWeb" type="text" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="ex. www.boulangerie-martin.fr (vide si pas de site)" value="${esc(p.siteWeb||"")}"></div>
     <div class="f full"><label>Notes</label><textarea name="notes">${esc(p.notes||"")}</textarea></div>
    </div>
    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${hasKey()?`<button type="button" class="btn sm primary" data-xenrich="${esc(p.id)}">📞 Compléter avec Google Maps</button>`:""}${gLink(p)}${p.tel?`<a class="btn sm" href="${esc(telHref(p.tel))}">📞 Appeler</a>`:""}<button type="button" class="btn sm" data-xmsg="prospects:${esc(p.id)}">✉️ Message</button>
@@ -490,6 +499,7 @@ function openProspect(id){
    ${hist.length?`<div class="sec-t">Historique</div><ul class="timeline">${hist.map(h=>`<li><span class="tl-ic" style="background:${PSC[h.statutApres]||"#0176d3"}">${h.type==="message"?"✉":"📞"}</span><div class="small muted">${fdate(h.date)}</div><div>${esc(h.resultat||"")}${h.note?" — "+esc(h.note):""}</div></li>`).join("")}</ul>`:""}
   </div><div class="modal-f"><button type="button" class="btn ghost danger" data-xdel="${esc(p.id)}">Supprimer</button><span style="flex:1"></span><button type="button" class="btn" data-close>Fermer</button><button class="btn primary">Enregistrer</button></div></form>`);
   $("#xpf").addEventListener("submit",e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target).entries());
+    f.siteWeb=normUrl(f.siteWeb);
     Object.assign(p,f);if(p.prochainAppel&&p.statut==="Nouveau")p.statut="À rappeler";saveP(p);closeModal();toast("✓ Prospect enregistré");render()});
 }
 
